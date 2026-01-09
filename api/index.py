@@ -53,26 +53,31 @@ def get_random_bg():
     # Fallback if something breaks or folder is empty
     return "bg1.png"
 
+
 def get_db():
     try:
-        if DATABASE_URL:
+        # 1. Try to get the Postgres URL (Neon/Vercel)
+        # We prefer POSTGRES_URL, but fallback to DATABASE_URL if needed.
+        url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
+
+        if url:
+            # 2. Fix SSL for Neon (Required for Vercel)
+            if "sslmode" not in url:
+                url += "?sslmode=require"
+
+            # 3. Connect using psycopg2
             import psycopg2
-            result = urlparse(DATABASE_URL)
-            conn = psycopg2.connect(
-                database=result.path[1:],
-                user=result.username,
-                password=result.password,
-                host=result.hostname,
-                port=result.port
-            )
+            conn = psycopg2.connect(url)
             return conn, "postgres"
         else:
+            # 4. Fallback to local SQLite (Only for local testing)
             conn = sqlite3.connect(DB_NAME)
             return conn, "sqlite"
     except Exception as e:
         logger.error(f"Database Connection Failed: {e}")
+        # This print will show up in Vercel Logs so you can see WHY it failed
+        print(f"CRITICAL DB ERROR: {e}")
         raise
-
 
 def init_db():
     conn, db_type = get_db()
