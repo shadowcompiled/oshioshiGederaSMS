@@ -570,6 +570,34 @@ def toggle_status():
         conn.close()
 
     return redirect('/admin')
+
+
+@app.route('/debug-db')
+def debug_db():
+    try:
+        # 1. Print Environment Variables (Safe version - hiding passwords)
+        url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
+        if not url:
+            return "ERROR: No DATABASE_URL or POSTGRES_URL found in env vars!"
+
+        safe_url = url.split(":")[0] + "://...@" + url.split("@")[-1]
+
+        # 2. Try Connecting
+        import psycopg2
+        if "sslmode" not in url: url += "?sslmode=require"
+        conn = psycopg2.connect(url)
+        cur = conn.cursor()
+
+        # 3. Try Creating Table
+        cur.execute("CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY);")
+        conn.commit()
+        conn.close()
+
+        return f"✅ SUCCESS! Connected to: {safe_url}"
+    except Exception as e:
+        return f"❌ FAILED: {str(e)}"
+
+
 if __name__ == '__main__':
     init_db()
     app.run(host='0.0.0.0', port=5000, debug=True)
