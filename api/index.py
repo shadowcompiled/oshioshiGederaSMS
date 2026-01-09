@@ -104,6 +104,24 @@ def init_db():
     finally:
         conn.close()
 
+@app.route('/force-init')
+def force_init():
+    try:
+        conn, db_type = get_db()
+        cur = conn.cursor()
+        # Explicitly create the table for Postgres
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                phone TEXT PRIMARY KEY,
+                name TEXT,
+                active BOOLEAN DEFAULT TRUE
+            );
+        ''')
+        conn.commit()
+        conn.close()
+        return "✅ Table 'customers' created successfully!"
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 def format_phone(p):
     if not p: return ""
