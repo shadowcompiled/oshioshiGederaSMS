@@ -396,8 +396,6 @@ def admin():
     return render_template_string(HTML_BASE, title="Admin", content=admin_html)
 
 
-
-# --- NEW BROADCAST LOGIC FOR VERCEL ---
 @app.route('/admin/broadcast', methods=['POST'])
 def broadcast():
     if not session.get('logged_in'): return redirect('/login')
@@ -405,10 +403,10 @@ def broadcast():
     message = request.form.get('message')
     if not message: return redirect('/admin')
 
-    # 1. Get All Active Users
+    # 1. Get Recipients
     conn, db_type = get_db()
     try:
-        q = "SELECT phone FROM customers WHERE active=1" if db_type == "sqlite" else "SELECT phone FROM customers WHERE active=TRUE"
+        q = "SELECT phone FROM customers WHERE active=TRUE" if db_type == "postgres" else "SELECT phone FROM customers WHERE active=1"
         if db_type == "postgres":
             cur = conn.cursor()
             cur.execute(q)
@@ -418,60 +416,51 @@ def broadcast():
     finally:
         conn.close()
 
-    # 2. DETECT ENVIRONMENT (Local vs Vercel)
-    # If we have QSTASH_TOKEN, we assume we want to use the Queue
+    # 2. Prepare for Sending
     qstash_token = os.environ.get("QSTASH_TOKEN")
 
+    # 3. Determine URL
+    # Use VERCEL_URL if available, otherwise construct it
+    domain = os.environ.get("VERCEL_URL")
+    if domain:
+        base_url = f"https://{domain}"
+    else:
+        # Fallback for local testing
+        base_url = request.url_root.rstrip('/')
+
+    target_endpoint = f"{base_url}/api/send_sms_task"
+
+    count = 0
+
+    # 4. SEND USING STANDARD REQUESTS (No Library Needed)
     if qstash_token:
-        # --- VERCEL MODE (Async Queue) ---
-        # UPDATED CLIENT NAME
-        client = QStash(token=qstash_token)
+        headers = {
+            "Authorization": f"Bearer {qstash_token}",
+            "Content-Type": "application/json"
+        }
 
-        base_url = os.environ.get("VERCEL_URL")
-        if not base_url:
-            base_url = request.url_root.rstrip('/')
-        else:
-            base_url = "https://" + base_url
-
-        target_endpoint = f"{base_url}/api/send_sms_task"
-
-        count = 0
         for row in recipients:
             phone = row[0]
-            # UPDATED METHOD CALL (.message.publish_json)
-            client.message.publish_json(
-                url=target_endpoint,
-                body={
-                    "phone": phone,
-                    "message": message,
-                    "secret": app.secret_key
-                }
-            )
-            count += 1
+            try:
+                # Send to QStash API directly
+                requests.post(
+                    f"https://qstash.upstash.io/v2/publish/{target_endpoint}",
+                    headers=headers,
+                    json={
+                        "phone": phone,
+                        "message": message,
+                        "secret": app.secret_key
+                    },
+                    timeout=5
+                )
+                count += 1
+            except Exception as e:
+                print(f"Failed to queue {phone}: {e}")
 
-        return redirect(url_for('admin', msg=f"התחלנו שליחה ל-{count} לקוחות (ברקע)"))
+        return redirect(url_for('admin', msg=f"ההודעות נשלחו לתור (נשלח ל-{count} לקוחות)"))
 
     else:
-        # --- LOCAL MODE (Simple Loop) ---
-        # Fallback if no QStash token found (e.g. testing on laptop)
-        success, fail = 0, 0
-        unsub_text = "להסרה:"
-
-        for row in recipients:
-            phone = row[0]
-            token = generate_secure_token(phone)
-            clean = phone.replace('+', '')
-            unsub_link = f"{request.url_root}unsubscribe/{clean}?token={token}"
-            final = f"{message}\n\n{unsub_text} {unsub_link}"
-
-            try:
-                payload = {"message": final, "phoneNumbers": [phone], "withDeliveryReport": True}
-                requests.post(f"{SMS_URL.rstrip('/')}/messages", json=payload, auth=(SMS_LOGIN, SMS_PASS), timeout=5)
-                success += 1
-            except:
-                fail += 1
-
-        return redirect(url_for('admin', msg=f"נשלח: {success}, נכשל: {fail}"))
+        return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN בהגדרות"))
 
 
 # --- NEW WORKER ROUTE (Called by QStash) ---
