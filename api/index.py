@@ -1,6 +1,4 @@
 import random
-
-from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, abort
 import os
 import requests
 import sqlite3
@@ -8,9 +6,9 @@ import re
 import logging
 import hmac
 import hashlib
+from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, abort
 from urllib.parse import urlparse
 from dotenv import load_dotenv
-from qstash import QStash  # pip install qstash
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,8 +19,6 @@ load_dotenv()
 app = Flask(__name__)
 
 # SECURITY CONFIG
-# IMPORTANT: This key MUST be constant and secret for unsubscribe tokens to work!
-# In Vercel/Prod: Set this in Environment Variables.
 app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_LONG_RANDOM_STRING")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
 
@@ -38,50 +34,38 @@ DB_NAME = "customers.db"
 # --- HELPERS ---
 def get_random_bg():
     """Finds a valid background image from the static folder."""
-    # List all files in static folder
     static_folder = os.path.join(app.root_path, 'static')
     try:
         files = os.listdir(static_folder)
-        # Filter only images starting with 'bg'
         bg_files = [f for f in files if f.startswith('bg') and f.lower().endswith(('.png', '.jpg', '.jpeg'))]
-
         if bg_files:
             return random.choice(bg_files)
     except Exception as e:
         logger.warning(f"Could not list static files: {e}")
-
-    # Fallback if something breaks or folder is empty
     return "bg1.png"
 
 
 def get_db():
     try:
-        # 1. Try to get the Postgres URL (Neon/Vercel)
-        # We prefer POSTGRES_URL, but fallback to DATABASE_URL if needed.
         url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
-
         if url:
-            # 2. Fix SSL for Neon (Required for Vercel)
             if "sslmode" not in url:
                 url += "?sslmode=require"
-
-            # 3. Connect using psycopg2
             import psycopg2
             conn = psycopg2.connect(url)
             return conn, "postgres"
         else:
-            # 4. Fallback to local SQLite (Only for local testing)
             conn = sqlite3.connect(DB_NAME)
             return conn, "sqlite"
     except Exception as e:
         logger.error(f"Database Connection Failed: {e}")
-        # This print will show up in Vercel Logs so you can see WHY it failed
         print(f"CRITICAL DB ERROR: {e}")
         raise
 
+
 def init_db():
-    conn, db_type = get_db()
     try:
+        conn, db_type = get_db()
         schema = '''
             CREATE TABLE IF NOT EXISTS customers (
                 phone TEXT PRIMARY KEY,
@@ -99,29 +83,10 @@ def init_db():
             cur.execute(schema)
             cur.close()
         conn.commit()
+        conn.close()
     except Exception as e:
         logger.error(f"Init DB Failed: {e}")
-    finally:
-        conn.close()
 
-@app.route('/force-init')
-def force_init():
-    try:
-        conn, db_type = get_db()
-        cur = conn.cursor()
-        # Explicitly create the table for Postgres
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS customers (
-                phone TEXT PRIMARY KEY,
-                name TEXT,
-                active BOOLEAN DEFAULT TRUE
-            );
-        ''')
-        conn.commit()
-        conn.close()
-        return "✅ Table 'customers' created successfully!"
-    except Exception as e:
-        return f"❌ Error: {e}"
 
 def format_phone(p):
     if not p: return ""
@@ -131,20 +96,18 @@ def format_phone(p):
     return clean
 
 
-# --- SECURITY: SIGNATURE GENERATOR ---
+# --- SECURITY ---
 def generate_secure_token(phone):
-    """Creates a signature for the phone number using our SECRET_KEY."""
     data = f"{phone}:{app.secret_key}"
-    return hmac.new(data.encode(), digestmod=hashlib.sha256).hexdigest()[:16]  # 16 chars is enough
+    return hmac.new(data.encode(), digestmod=hashlib.sha256).hexdigest()[:16]
 
 
 def verify_token(phone, token):
-    """Checks if the token matches the phone."""
     expected = generate_secure_token(phone)
     return hmac.compare_digest(expected, token)
 
 
-# --- HTML TEMPLATES ---
+# --- TEMPLATE ---
 HTML_BASE = """
 <!DOCTYPE html>
 <html lang="en" dir="rtl">
@@ -153,48 +116,35 @@ HTML_BASE = """
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ title }}</title>
     <style>
-        /* Corrected SlideShow with Mixed JPG/PNG */
         @keyframes slideShow {
             0% { background-image: url('/static/bg1.png'); }
-            5% { background-image: url('/static/bg2.png'); }
-            25% { background-image: url('/static/bg3.jpg'); }
-            30% { background-image: url('/static/bg4.png'); }
-            35% { background-image: url('/static/bg5.png'); }
-            40% { background-image: url('/static/bg6.png'); }
-            80% { background-image: url('/static/bg7.png'); }
+            20% { background-image: url('/static/bg2.png'); }
+            40% { background-image: url('/static/bg3.jpg'); }
+            60% { background-image: url('/static/bg4.png'); }
+            80% { background-image: url('/static/bg5.png'); }
             100% { background-image: url('/static/bg1.png'); }
         }
-
         body { 
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
             margin: 0; padding: 0;
-
-            /* Fallback Image (PNG) */
             background-color: #000;
             background-image: url('/static/bg1.png'); 
-
             background-size: cover;
             background-position: center;
             background-attachment: fixed;
-
-            /* Animation: 35s total, infinite loop */
             animation: slideShow 35s infinite;
-
             position: relative; 
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
         }
-
-        /* Dark Overlay so text is readable */
         body::before {
             content: "";
             position: absolute; top:0; left:0; right:0; bottom:0;
-            background: rgba(0,0,0,0.5); /* 50% Dark Tint */
+            background: rgba(0,0,0,0.5);
             z-index: -1;
         }
-
         .container {
             z-index: 1;
             background: rgba(255, 255, 255, 0.95);
@@ -205,21 +155,17 @@ HTML_BASE = """
             box-shadow: 0 8px 32px rgba(0,0,0,0.3); 
             text-align: center; 
         }
-
         h2 { color: #d32f2f; margin-bottom: 10px; font-size: 28px; }
         p { color: #555; margin-bottom: 20px; font-size: 16px; }
         .logo-area { font-size: 50px; margin-bottom: 10px; }
-
         input, textarea { 
             width: 100%; padding: 12px; margin: 10px 0; 
             border: 2px solid #eee; border-radius: 8px; 
-            box-sizing: border-box; font-size: 16px; 
-            text-align: right; 
+            box-sizing: border-box; font-size: 16px; text-align: right; 
         }
         button { 
             background: #d32f2f; color: white; border: none; padding: 15px; width: 100%; 
-            border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; 
-            margin-top: 10px;
+            border-radius: 8px; font-size: 18px; font-weight: bold; cursor: pointer; margin-top: 10px;
         }
         button:hover { background: #b71c1c; }
         .success { color: green; font-weight:bold; }
@@ -240,7 +186,7 @@ HTML_BASE = """
 
 @app.route('/')
 def home():
-    random_bg = get_random_bg()  # <--- Use helper
+    random_bg = get_random_bg()
     content = """
         <h2>מועדון ה-VIP שלנו</h2>
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
@@ -252,12 +198,12 @@ def home():
         <br>
         <small><a href="/login" style="color:#888;">כניסת מנהל</a></small>
     """
-    return render_template_string(HTML_BASE, title="Sushi VIP", content=content,bg_image=random_bg)
+    return render_template_string(HTML_BASE, title="Sushi VIP", content=content, bg_image=random_bg)
 
 
 @app.route('/submit', methods=['POST'])
 def submit():
-    random_bg = get_random_bg()  # <--- Use helper
+    random_bg = get_random_bg()
     name = request.form.get('name', '').strip()
     raw_phone = request.form.get('phone', '').strip()
     phone = format_phone(raw_phone)
@@ -285,12 +231,13 @@ def submit():
         if 'conn' in locals(): conn.close()
 
     return render_template_string(HTML_BASE, title="תודה",
-                                  content="<h2 class='success'>✅ נרשמת בהצלחה!</h2><a href='/'>חזור</a>",bg_image=random_bg)
+                                  content="<h2 class='success'>✅ נרשמת בהצלחה!</h2><a href='/'>חזור</a>",
+                                  bg_image=random_bg)
 
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    random_bg = get_random_bg()  # <--- Use helper
+    random_bg = get_random_bg()
     if request.method == 'POST':
         if request.form.get('password') == ADMIN_PASSWORD:
             session['logged_in'] = True
@@ -305,7 +252,7 @@ def login():
         <button type="submit" style="background:#333;">כניסה</button>
     </form>
     """
-    return render_template_string(HTML_BASE, title="Login", content=content,bg_image=random_bg)
+    return render_template_string(HTML_BASE, title="Login", content=content, bg_image=random_bg)
 
 
 @app.route('/admin')
@@ -329,14 +276,11 @@ def admin():
     active_count = sum(1 for r in rows if r[2])
     msg = request.args.get('msg', '')
 
-    # Generate Table HTML
     table_rows = ""
     for r in rows:
         phone = r[0]
-        status = '<span class="badge badge-active">פעיל</span>' if r[
-            2] else '<span class="badge badge-unsub">הוסר</span>'
+        status = '<span class="success">פעיל</span>' if r[2] else '<span class="error">הוסר</span>'
 
-        # USE QUERY PARAMETERS for safety (avoids URL encoding bugs)
         if r[2]:
             link = url_for('toggle_status', phone=phone, action='block')
             action_btn = f'<a href="{link}" style="color:red; font-size:12px;">חסימה</a>'
@@ -360,7 +304,6 @@ def admin():
             <a href="/logout" style="background:#333; color:white; padding:5px 10px; border-radius:4px; text-decoration:none; font-size:14px;">יציאה</a>
         </div>
 
-        <!-- BROADCAST BOX -->
         <div style="background:#fff; padding:20px; border:1px solid #eee; border-radius:8px; margin-bottom:20px;">
             <h3 style="margin-top:0;">📢 שליחת הודעה ({active_count} פעילים)</h3>
             <form action="/admin/broadcast" method="POST" onsubmit="return confirm('לשלוח לכולם?');">
@@ -371,7 +314,6 @@ def admin():
             <p style="color:blue; font-weight:bold;">{msg}</p>
         </div>
 
-        <!-- CUSTOMER TABLE -->
         <h3 style="border-bottom:2px solid #d32f2f; padding-bottom:5px; display:inline-block;">רשימת לקוחות ({len(rows)})</h3>
         <div style="overflow-x:auto;">
             <table style="width:100%; border-collapse:collapse; margin-top:10px;">
@@ -390,12 +332,10 @@ def admin():
         </div>
     </div>
     """
-
-    # Pick a random background but keep it simple for admin
-    # Or just use the same slideshow
     return render_template_string(HTML_BASE, title="Admin", content=admin_html)
 
 
+# --- BROADCAST (FIXED FOR VERCEL) ---
 @app.route('/admin/broadcast', methods=['POST'])
 def broadcast():
     if not session.get('logged_in'): return redirect('/login')
@@ -403,7 +343,6 @@ def broadcast():
     message = request.form.get('message')
     if not message: return redirect('/admin')
 
-    # 1. Get Recipients
     conn, db_type = get_db()
     try:
         q = "SELECT phone FROM customers WHERE active=TRUE" if db_type == "postgres" else "SELECT phone FROM customers WHERE active=1"
@@ -416,33 +355,27 @@ def broadcast():
     finally:
         conn.close()
 
-    # 2. Prepare for Sending
     qstash_token = os.environ.get("QSTASH_TOKEN")
 
-    # 3. Determine URL
-    # Use VERCEL_URL if available, otherwise construct it
+    # Check if VERCEL_URL is set (it usually is on Vercel), otherwise fallback
     domain = os.environ.get("VERCEL_URL")
     if domain:
         base_url = f"https://{domain}"
     else:
-        # Fallback for local testing
         base_url = request.url_root.rstrip('/')
 
     target_endpoint = f"{base_url}/api/send_sms_task"
 
-    count = 0
-
-    # 4. SEND USING STANDARD REQUESTS (No Library Needed)
     if qstash_token:
         headers = {
             "Authorization": f"Bearer {qstash_token}",
             "Content-Type": "application/json"
         }
 
+        count = 0
         for row in recipients:
             phone = row[0]
             try:
-                # Send to QStash API directly
                 requests.post(
                     f"https://qstash.upstash.io/v2/publish/{target_endpoint}",
                     headers=headers,
@@ -458,33 +391,25 @@ def broadcast():
                 print(f"Failed to queue {phone}: {e}")
 
         return redirect(url_for('admin', msg=f"ההודעות נשלחו לתור (נשלח ל-{count} לקוחות)"))
-
     else:
-        return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN בהגדרות"))
+        return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN"))
 
 
-# --- NEW WORKER ROUTE (Called by QStash) ---
 @app.route('/api/send_sms_task', methods=['POST'])
 def send_sms_task():
     data = request.json
-
-    # 1. Security Check
     if data.get('secret') != app.secret_key:
         return "Unauthorized", 401
 
     phone = data.get('phone')
     message = data.get('message')
 
-    # 2. Generate Unsub Link
     token = generate_secure_token(phone)
     clean = phone.replace('+', '')
-    # Note: request.url_root here will be the Vercel URL
     unsub_link = f"{request.url_root}unsubscribe/{clean}?token={token}"
     unsub_text = "להסרה:"
-
     final_msg = f"{message}\n\n{unsub_text} {unsub_link}"
 
-    # 3. Send SMS
     try:
         payload = {"message": final_msg, "phoneNumbers": [phone], "withDeliveryReport": True}
         resp = requests.post(f"{SMS_URL.rstrip('/')}/messages", json=payload, auth=(SMS_LOGIN, SMS_PASS), timeout=10)
@@ -497,27 +422,14 @@ def send_sms_task():
 
 @app.route('/unsubscribe/<phone>')
 def unsubscribe(phone):
-    # 1. GET TOKEN
     token = request.args.get('token')
-    if not token:
-        abort(403, "Missing Token")
+    if not token: abort(403, "Missing Token")
 
-    # 2. RESTORE FORMAT (+972...) to verify signature
-    # We passed cleaned phone in URL, so we might need to fix it or just check both formats
-    # Let's try to match what generate_secure_token expects.
-    # If logic above used 'phone' (which is +972...), we must reconstruct it.
-
-    # Try 1: Assume input is "97250..." -> Make it "+97250..."
     candidate_phone = "+" + phone if not phone.startswith('+') else phone
-
     if not verify_token(candidate_phone, token):
-        # Try 2: Maybe we signed the clean version? (Check broadcast logic)
-        # Broadcast logic: token = generate_secure_token(phone) -> Phone from DB has +
-        # So we MUST have the + to verify.
-        if not verify_token(phone, token):  # Just in case
-            abort(403, "Invalid Signature - Link Broken or Tampered")
+        if not verify_token(phone, token):
+            abort(403, "Invalid Signature")
 
-    # 3. IF VALID, UNSUBSCRIBE
     try:
         conn, db_type = get_db()
         q_sql = "UPDATE customers SET active=0 WHERE phone=?"
@@ -533,76 +445,55 @@ def unsubscribe(phone):
     finally:
         if 'conn' in locals(): conn.close()
 
-    return render_template_string(HTML_BASE, title="הוסרת",
-                                  content="<h2 class='success'>הוסרת בהצלחה</h2><p>לא תקבל יותר הודעות מאיתנו.</p>")
+    return render_template_string(HTML_BASE, title="הוסרת", content="<h2 class='success'>הוסרת בהצלחה</h2>")
 
 
 @app.route('/admin/toggle')
 def toggle_status():
     if not session.get('logged_in'): return redirect('/login')
-
-    # Get params safely from query string
     phone = request.args.get('phone')
     action = request.args.get('action')
+    if not phone or not action: return redirect('/admin')
 
-    if not phone or not action:
-        return redirect('/admin')
-
-    # Ensure phone has + (Browsers sometimes strip it from query params too, but less often)
-    # If phone is "97250...", make it "+97250..."
     clean_phone = phone.strip()
     if not clean_phone.startswith('+') and clean_phone.startswith('972'):
         clean_phone = '+' + clean_phone
     elif not clean_phone.startswith('+'):
-        # Fallback: assuming it's just missing the plus
         clean_phone = '+' + clean_phone.lstrip()
-
-    new_status = 1 if action == 'unblock' else 0
-    new_status_pg = "TRUE" if action == 'unblock' else "FALSE"
 
     conn, db_type = get_db()
     try:
         if db_type == "sqlite":
+            new_status = 1 if action == 'unblock' else 0
             conn.execute("UPDATE customers SET active=? WHERE phone=?", (new_status, clean_phone))
         else:
             cur = conn.cursor()
-            # Postgres needs boolean literal or proper casting
             pg_bool = True if action == 'unblock' else False
             cur.execute("UPDATE customers SET active=%s WHERE phone=%s", (pg_bool, clean_phone))
             cur.close()
         conn.commit()
-    except Exception as e:
-        print(f"Error toggling {clean_phone}: {e}")
     finally:
         conn.close()
-
     return redirect('/admin')
 
 
-@app.route('/debug-db')
-def debug_db():
+@app.route('/force-init')
+def force_init():
     try:
-        # 1. Print Environment Variables (Safe version - hiding passwords)
-        url = os.environ.get("POSTGRES_URL") or os.environ.get("DATABASE_URL")
-        if not url:
-            return "ERROR: No DATABASE_URL or POSTGRES_URL found in env vars!"
-
-        safe_url = url.split(":")[0] + "://...@" + url.split("@")[-1]
-
-        # 2. Try Connecting
-        import psycopg2
-        if "sslmode" not in url: url += "?sslmode=require"
-        conn = psycopg2.connect(url)
+        conn, db_type = get_db()
         cur = conn.cursor()
-
-        # 3. Try Creating Table
-        cur.execute("CREATE TABLE IF NOT EXISTS test_table (id SERIAL PRIMARY KEY);")
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS customers (
+                phone TEXT PRIMARY KEY,
+                name TEXT,
+                active BOOLEAN DEFAULT TRUE
+            );
+        ''')
         conn.commit()
         conn.close()
-
-        return f"✅ SUCCESS! Connected to: {safe_url}"
+        return "✅ Table 'customers' created successfully!"
     except Exception as e:
-        return f"❌ FAILED: {str(e)}"
+        return f"❌ Error: {e}"
 
 
 if __name__ == '__main__':
