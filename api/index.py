@@ -585,7 +585,8 @@ def admin():
 def export_csv():
     conn, db_type = get_db()
     try:
-        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active FROM customers ORDER BY name ASC"
+        # 1. Added created_at to query
+        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at FROM customers ORDER BY name ASC"
         if db_type == "sqlite":
             cur = conn.execute(q)
             rows = cur.fetchall()
@@ -599,11 +600,19 @@ def export_csv():
 
     output = io.StringIO()
     writer = csv.writer(output, lineterminator='\n')
-    writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'תאריך רישום','סטטוס'])
+    # Header is already correct in your snippet
+    writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'תאריך רישום', 'סטטוס'])
 
     for r in rows:
         status = 'פעיל' if r[6] else 'הוסר'
-        writer.writerow([r[1], r[0], r[2] or '', r[3] or '', r[4] or '', r[5] or '', status])
+
+        # 2. Extract and format date (index 7)
+        reg_date = r[7] if len(r) > 7 and r[7] else ''
+        if reg_date and not isinstance(reg_date, str):
+            reg_date = reg_date.strftime('%Y-%m-%d %H:%M')
+
+        # 3. Added reg_date to the written row
+        writer.writerow([r[1], r[0], r[2] or '', r[3] or '', r[4] or '', r[5] or '', reg_date, status])
 
     output.seek(0)
     mem = io.BytesIO()
