@@ -624,10 +624,31 @@ def send_sms_task():
     final_msg = f"{message}\n\n{unsub_text} {unsub_link}"
 
     try:
-        payload = {"message": final_msg, "phoneNumbers": [phone], "withDeliveryReport": True}
-        resp = requests.post(f"{SMS_URL.rstrip('/')}/messages", json=payload, auth=(SMS_LOGIN, SMS_PASS), timeout=10)
+        # NEW PAYLOAD FORMAT (More reliable)
+        payload = {
+            "textMessage": {
+                "text": final_msg
+            },
+            "phoneNumbers": [phone],
+            "withDeliveryReport": True
+        }
+
+        # We try the new format first.
+        # If your gateway version is very old, we can fallback, but this is the standard now.
+        resp = requests.post(
+            f"{SMS_URL.rstrip('/')}/messages",
+            json=payload,
+            auth=(SMS_LOGIN, SMS_PASS),
+            timeout=15  # Increased timeout slightly
+        )
+
+        # Logging the actual response for debugging
+        if not resp.ok:
+            logger.error(f"SMS Gateway Error {resp.status_code}: {resp.text}")
+
         resp.raise_for_status()
-        return jsonify({"status": "sent", "phone": phone})
+        return jsonify({"status": "sent", "phone": phone, "gateway_response": resp.json()})
+
     except Exception as e:
         logger.error(f"Worker SMS Fail {phone}: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -675,22 +696,41 @@ def toggle_status():
     if not phone or action not in ['block', 'unblock']:
         return redirect('/admin')
 
-    clean_phone = re.sub(r'[^\d+]', '', phone)[:20]
-    if not clean_phone.startswith('+'):
-        clean_phone = '+' + clean_phone.lstrip('+')
+    # FIX: Handle the case where '+' was converted to a space by the browser/server
+    if phone.startswith(' '):
+        phone = '+' + phone.lstrip()
+
+    # FIX: Ensure it starts with + if it looks like a country code number (972...)
+    # This catches cases where the '+' was stripped entirely
+    clean_phone = re.sub(r'[^\d]', '', phone)  # remove non-digits temporarily
+    if clean_phone.startswith('972'):
+        formatted_phone = '+' + clean_phone
+    else:
+        # Fallback: trust the input but ensure it has a + if it was intended
+        formatted_phone = phone if phone.startswith('+') else '+' + clean_phone
+
+    # Final sanity check: Limit length to avoid DB errors
+    formatted_phone = formatted_phone[:20]
 
     conn, db_type = get_db()
     try:
         if db_type == "sqlite":
             new_status = 1 if action == 'unblock' else 0
-            conn.execute("UPDATE customers SET active=? WHERE phone=?", (new_status, clean_phone))
+            # Try exact match first
+            cursor = conn.execute("UPDATE customers SET active=? WHERE phone=?", (new_status, formatted_phone))
+            if cursor.rowcount == 0:
+                # If no rows affected, try without the plus or with the space (fuzzy fix)
+                conn.execute("UPDATE customers SET active=? WHERE phone LIKE ?", (new_status, f"%{clean_phone}"))
         else:
             cur = conn.cursor()
             pg_bool = True if action == 'unblock' else False
-            cur.execute("UPDATE customers SET active=%s WHERE phone=%s", (pg_bool, clean_phone))
+            cur.execute("UPDATE customers SET active=%s WHERE phone=%s", (pg_bool, formatted_phone))
+            if cur.rowcount == 0:
+                # Postgres fallback
+                cur.execute("UPDATE customers SET active=%s WHERE phone LIKE %s", (pg_bool, f"%{clean_phone}"))
             cur.close()
         conn.commit()
-        logger.info(f"Customer {clean_phone} {'unblocked' if action == 'unblock' else 'blocked'} by admin")
+        logger.info(f"Customer {formatted_phone} status changed to {action}")
     finally:
         conn.close()
     return redirect('/admin')
