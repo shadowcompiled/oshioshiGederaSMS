@@ -341,7 +341,7 @@ def broadcast():
     if not session.get('logged_in'): return redirect('/login')
 
     message = request.form.get('message')
-    if not message: return redirect('/admin')
+    print(f"DEBUG: Broadcast started. Message len: {len(message)}")  # DEBUG
 
     # 1. Get Recipients
     conn, db_type = get_db()
@@ -353,46 +353,51 @@ def broadcast():
             recipients = cur.fetchall()
         else:
             recipients = conn.execute(q).fetchall()
+        print(f"DEBUG: Found {len(recipients)} recipients")  # DEBUG
     finally:
         conn.close()
 
     # 2. Get Config
     qstash_token = os.environ.get("QSTASH_TOKEN")
+    if not qstash_token:
+        print("DEBUG: ERROR - QSTASH_TOKEN is missing!")  # DEBUG
+        return redirect(url_for('admin', msg="Error: Missing QSTASH_TOKEN"))
 
-    # 3. SET URL MANUALLY (The Fix)
+    # 3. Manual URL
     base_url = "https://oshioshi-gedera-sms.vercel.app"
     target_endpoint = f"{base_url}/api/send_sms_task"
+    print(f"DEBUG: Target Endpoint: {target_endpoint}")  # DEBUG
 
-    # 4. SEND USING STANDARD REQUESTS
-    if qstash_token:
-        headers = {
-            "Authorization": f"Bearer {qstash_token}",
-            "Content-Type": "application/json"
-        }
+    # 4. Send
+    headers = {
+        "Authorization": f"Bearer {qstash_token}",
+        "Content-Type": "application/json"
+    }
 
-        count = 0
-        for row in recipients:
-            phone = row[0]
-            try:
-                # Send to QStash API directly
-                requests.post(
-                    f"https://qstash.upstash.io/v2/publish/{target_endpoint}",
-                    headers=headers,
-                    json={
-                        "phone": phone,
-                        "message": message,
-                        "secret": app.secret_key
-                    },
-                    timeout=5
-                )
+    count = 0
+    for row in recipients:
+        phone = row[0]
+        try:
+            print(f"DEBUG: Sending to {phone}...")  # DEBUG
+            resp = requests.post(
+                f"https://qstash.upstash.io/v2/publish/{target_endpoint}",
+                headers=headers,
+                json={
+                    "phone": phone,
+                    "message": message,
+                    "secret": app.secret_key
+                },
+                timeout=5
+            )
+            print(f"DEBUG: QStash Response: {resp.status_code} - {resp.text}")  # DEBUG
+            if resp.status_code == 200 or resp.status_code == 201 or resp.status_code == 202:
                 count += 1
-            except Exception as e:
-                print(f"Failed to queue {phone}: {e}")
+            else:
+                print(f"DEBUG: Failed QStash for {phone}: {resp.text}")
+        except Exception as e:
+            print(f"DEBUG: Exception for {phone}: {e}")
 
-        return redirect(url_for('admin', msg=f"ההודעות נשלחו לתור (נשלח ל-{count} לקוחות)"))
-
-    else:
-        return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN בהגדרות"))
+    return redirect(url_for('admin', msg=f"Sent to queue: {count}"))
 @app.route('/api/send_sms_task', methods=['POST'])
 def send_sms_task():
     data = request.json
