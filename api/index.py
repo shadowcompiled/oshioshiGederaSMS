@@ -343,6 +343,7 @@ def broadcast():
     message = request.form.get('message')
     if not message: return redirect('/admin')
 
+    # 1. Get Recipients
     conn, db_type = get_db()
     try:
         q = "SELECT phone FROM customers WHERE active=TRUE" if db_type == "postgres" else "SELECT phone FROM customers WHERE active=1"
@@ -355,17 +356,14 @@ def broadcast():
     finally:
         conn.close()
 
+    # 2. Get Config
     qstash_token = os.environ.get("QSTASH_TOKEN")
 
-    # Check if VERCEL_URL is set (it usually is on Vercel), otherwise fallback
-    domain = os.environ.get("VERCEL_URL")
-    if domain:
-        base_url = f"https://{domain}"
-    else:
-        base_url = request.url_root.rstrip('/')
-
+    # 3. SET URL MANUALLY (The Fix)
+    base_url = "https://oshioshi-gedera-sms.vercel.app"
     target_endpoint = f"{base_url}/api/send_sms_task"
 
+    # 4. SEND USING STANDARD REQUESTS
     if qstash_token:
         headers = {
             "Authorization": f"Bearer {qstash_token}",
@@ -376,6 +374,7 @@ def broadcast():
         for row in recipients:
             phone = row[0]
             try:
+                # Send to QStash API directly
                 requests.post(
                     f"https://qstash.upstash.io/v2/publish/{target_endpoint}",
                     headers=headers,
@@ -391,10 +390,9 @@ def broadcast():
                 print(f"Failed to queue {phone}: {e}")
 
         return redirect(url_for('admin', msg=f"ההודעות נשלחו לתור (נשלח ל-{count} לקוחות)"))
+
     else:
-        return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN"))
-
-
+        return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN בהגדרות"))
 @app.route('/api/send_sms_task', methods=['POST'])
 def send_sms_task():
     data = request.json
