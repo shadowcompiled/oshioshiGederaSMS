@@ -395,11 +395,11 @@ HTML_BASE = """
 @limiter.limit("20 per minute")
 def home():
     random_bg = get_random_bg()
-    content = f"""
+    content = """
         <h2>מועדון ה-VIP שלנו</h2>
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
         <form action="/submit" method="POST">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="csrf_token" value="{{{{ csrf_token() }}}}">
             <div class="form-group">
                 <label for="name">שם מלא *</label>
                 <input type="text" id="name" name="name" placeholder="שמך" required maxlength="100">
@@ -504,7 +504,7 @@ def login():
         return render_template_string(HTML_BASE, title="Login",
                                       content="<h2>שגיאה</h2><p>סיסמה שגויה</p><a href='/login'>נסה שוב</a>")
 
-    content = f"""
+    content = """
     <h2>כניסת מנהל</h2>
     <form method="POST">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
