@@ -165,6 +165,8 @@ def force_init():
 def init_db():
     try:
         conn, db_type = get_db()
+
+        # 1. Create table if it doesn't exist (Standard)
         schema = '''
             CREATE TABLE IF NOT EXISTS customers (
                 phone TEXT PRIMARY KEY,
@@ -179,16 +181,38 @@ def init_db():
         '''
         if db_type == "postgres":
             schema = schema.replace("DEFAULT 1", "DEFAULT TRUE")
-        if db_type == "sqlite":
-            conn.execute(schema)
-        else:
             cur = conn.cursor()
             cur.execute(schema)
             cur.close()
+        else:
+            conn.execute(schema)
+
         conn.commit()
+
+        # 2. AUTO-MIGRATION: Add 'created_at' column if it's missing
+        try:
+            if db_type == "postgres":
+                cur = conn.cursor()
+                # Postgres supports 'IF NOT EXISTS' for columns
+                cur.execute(
+                    "ALTER TABLE customers ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                cur.close()
+            else:
+                # SQLite: Try to add it, ignore error if it exists
+                try:
+                    conn.execute("ALTER TABLE customers ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP")
+                except Exception:
+                    pass
+            conn.commit()
+        except Exception as e:
+            conn.rollback()
+            logger.warning(f"Column migration skipped or failed: {e}")
+
         conn.close()
-    except Exception:
-        pass
+        logger.info("Database initialized and patched successfully.")
+
+    except Exception as e:
+        logger.error(f"DB Init Failed: {e}")
 
 
 def format_phone(p):
