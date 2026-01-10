@@ -12,6 +12,10 @@ from flask import Flask, request, render_template_string, jsonify, session, redi
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 from datetime import datetime
+from flask_wtf.csrf import CSRFProtect
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_talisman import Talisman
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,9 +25,36 @@ load_dotenv()
 
 app = Flask(__name__)
 
-# SECURITY CONFIG
-app.secret_key = os.environ.get("SECRET_KEY", "CHANGE_THIS_TO_A_LONG_RANDOM_STRING")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin")
+# SECURITY CONFIG - ENHANCED
+app.secret_key = os.environ.get("SECRET_KEY")
+if not app.secret_key or app.secret_key == "CHANGE_THIS_TO_A_LONG_RANDOM_STRING":
+    raise ValueError("SECRET_KEY must be set to a secure random value in production")
+
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
+    raise ValueError("ADMIN_PASSWORD must be changed from default value")
+
+# CSRF Protection
+csrf = CSRFProtect(app)
+
+# Rate Limiting
+limiter = Limiter(
+    app=app,
+    key_func=get_remote_address,
+    default_limits=["200 per day", "50 per hour"],
+    storage_uri="memory://"
+)
+
+# Security Headers (disable HTTPS enforcement in dev, enable in production)
+if os.environ.get("FLASK_ENV") == "production":
+    Talisman(app,
+             force_https=True,
+             strict_transport_security=True,
+             content_security_policy={
+                 'default-src': "'self'",
+                 'img-src': "'self' data:",
+                 'style-src': "'unsafe-inline' 'self'"
+             })
 
 # SMS Gateway Config
 SMS_LOGIN = os.environ.get("ANDROID_SMS_GATEWAY_LOGIN")
@@ -62,18 +93,28 @@ def get_db():
             return conn, "sqlite"
     except Exception as e:
         logger.error(f"Database Connection Failed: {e}")
-        print(f"CRITICAL DB ERROR: {e}")
         raise
 
-@app.route('/force-init')
-def force_init():
-    # --- SECURITY FIX START ---
-    if not session.get('logged_in'):
-        return "⛔ Access Denied: Admins only", 403
-    # --- SECURITY FIX END ---
 
+# ADMIN AUTHORIZATION DECORATOR
+def admin_required(f):
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not session.get('logged_in'):
+            logger.warning(f"Unauthorized access attempt to {request.path} from {get_remote_address()}")
+            abort(403)
+        return f(*args, **kwargs)
+
+    return decorated_function
+
+
+# SECURITY: Moved force-init inside admin protection
+@app.route('/force-init')
+@admin_required
+@limiter.limit("1 per hour")
+def force_init():
     try:
-        conn, db_type = get_db()
         conn, db_type = get_db()
         if db_type == "postgres":
             cur = conn.cursor()
@@ -81,12 +122,13 @@ def force_init():
             cur.execute('''
                 CREATE TABLE customers (
                     phone TEXT PRIMARY KEY,
-                    name TEXT,
-                    email TEXT,
-                    date_of_birth TEXT,
-                    wedding_day TEXT,
-                    city TEXT,
-                    active BOOLEAN DEFAULT TRUE
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    date_of_birth TEXT NOT NULL,
+                    wedding_day TEXT NOT NULL,
+                    city TEXT NOT NULL,
+                    active BOOLEAN DEFAULT TRUE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             ''')
             cur.close()
@@ -95,19 +137,23 @@ def force_init():
             conn.execute('''
                 CREATE TABLE customers (
                     phone TEXT PRIMARY KEY,
-                    name TEXT,
-                    email TEXT,
-                    date_of_birth TEXT,
-                    wedding_day TEXT,
-                    city TEXT,
-                    active BOOLEAN DEFAULT 1
+                    name TEXT NOT NULL,
+                    email TEXT NOT NULL,
+                    date_of_birth TEXT NOT NULL,
+                    wedding_day TEXT NOT NULL,
+                    city TEXT NOT NULL,
+                    active BOOLEAN DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             ''')
         conn.commit()
         conn.close()
+        logger.info(f"Database reset by admin from IP {get_remote_address()}")
         return "✅ Table 'customers' created successfully!"
     except Exception as e:
-        return f"❌ Error: {e}"
+        logger.error(f"Force init error: {e}")
+        return f"❌ Error: {e}", 500
+
 
 def init_db():
     try:
@@ -115,12 +161,13 @@ def init_db():
         schema = '''
             CREATE TABLE IF NOT EXISTS customers (
                 phone TEXT PRIMARY KEY,
-                name TEXT,
-                email TEXT,
-                date_of_birth TEXT,
-                wedding_day TEXT,
-                city TEXT,
-                active BOOLEAN DEFAULT 1
+                name TEXT NOT NULL,
+                email TEXT NOT NULL,
+                date_of_birth TEXT NOT NULL,
+                wedding_day TEXT NOT NULL,
+                city TEXT NOT NULL,
+                active BOOLEAN DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         '''
         if db_type == "postgres":
@@ -228,7 +275,6 @@ HTML_BASE = """
             line-height: 1.5;
         }
 
-        /* --- UPDATED LOGO CSS --- */
         .logo-area { 
             margin-bottom: 20px;
             text-align: center;
@@ -237,12 +283,11 @@ HTML_BASE = """
         }
 
         .logo-area img {
-            width: 401px;        /* Force EXACT width requested */
-            height: auto;        /* Maintain aspect ratio height (approx 126px) */
-            max-width: 100%;     /* Ensure it shrinks on very small phones */
+            width: 401px;
+            height: auto;
+            max-width: 100%;
             object-fit: contain;
         }
-        /* ------------------------ */
 
         .form-group {
             margin-bottom: 14px;
@@ -347,12 +392,14 @@ HTML_BASE = """
 # --- ROUTES ---
 
 @app.route('/')
+@limiter.limit("20 per minute")
 def home():
     random_bg = get_random_bg()
-    content = """
+    content = f"""
         <h2>מועדון ה-VIP שלנו</h2>
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
         <form action="/submit" method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label for="name">שם מלא *</label>
                 <input type="text" id="name" name="name" placeholder="שמך" required maxlength="100">
@@ -385,49 +432,53 @@ def home():
 
 
 @app.route('/submit', methods=['POST'])
+@limiter.limit("5 per minute")
 def submit():
-    # Get all fields
-    name = request.form.get('name', '').strip()
-    raw_phone = request.form.get('phone', '').strip()
-    email = request.form.get('email', '').strip()
+    # Get all fields - SECURITY: Sanitize inputs
+    name = request.form.get('name', '').strip()[:100]
+    raw_phone = request.form.get('phone', '').strip()[:20]
+    email = request.form.get('email', '').strip()[:255]
     dob = request.form.get('date_of_birth', '').strip()
     wedding = request.form.get('wedding_day', '').strip()
-    city = request.form.get('city', '').strip()
+    city = request.form.get('city', '').strip()[:50]
 
-    # --- VALIDATION FIX START ---
-    # Check if ANY field is empty
+    # Validation
     if not all([name, raw_phone, email, dob, wedding, city]):
-         return render_template_string(HTML_BASE, title="שגיאה",
+        return render_template_string(HTML_BASE, title="שגיאה",
                                       content="<h3 class='error'>אנא מלא את כל שדות החובה</h3><a href='/'>חזור</a>")
+
     phone = format_phone(raw_phone)
 
     if len(phone) < 10 or not phone.startswith('+'):
+        logger.warning(f"Invalid phone attempt: {raw_phone}")
         return render_template_string(HTML_BASE, title="שגיאה",
                                       content="<h3 class='error'>מספר טלפון לא תקין</h3><a href='/'>חזור</a>")
 
     email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
     if not re.match(email_regex, email):
+        logger.warning(f"Invalid email attempt: {email}")
         return render_template_string(HTML_BASE, title="שגיאה",
                                       content="<h3 class='error'>כתובת דוא\"ל לא תקינה</h3><a href='/'>חזור</a>")
 
+    # SECURITY: Parameterized queries prevent SQL injection
     try:
         conn, db_type = get_db()
-        q_sql = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
-                   VALUES (?, ?, ?, ?, ?, ?, 1) 
-                   ON CONFLICT(phone) DO UPDATE SET active=1, name=excluded.name, email=excluded.email, 
-                   date_of_birth=excluded.date_of_birth, wedding_day=excluded.wedding_day, city=excluded.city'''
-        q_pg = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
-                  VALUES (%s, %s, %s, %s, %s, %s, TRUE) 
-                  ON CONFLICT(phone) DO UPDATE SET active=TRUE, name=EXCLUDED.name, email=EXCLUDED.email,
-                  date_of_birth=EXCLUDED.date_of_birth, wedding_day=EXCLUDED.wedding_day, city=EXCLUDED.city'''
-
         if db_type == "sqlite":
+            q_sql = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
+                       VALUES (?, ?, ?, ?, ?, ?, 1) 
+                       ON CONFLICT(phone) DO UPDATE SET active=1, name=excluded.name, email=excluded.email, 
+                       date_of_birth=excluded.date_of_birth, wedding_day=excluded.wedding_day, city=excluded.city'''
             conn.execute(q_sql, (phone, name, email, dob, wedding, city))
         else:
+            q_pg = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
+                      VALUES (%s, %s, %s, %s, %s, %s, TRUE) 
+                      ON CONFLICT(phone) DO UPDATE SET active=TRUE, name=EXCLUDED.name, email=EXCLUDED.email,
+                      date_of_birth=EXCLUDED.date_of_birth, wedding_day=EXCLUDED.wedding_day, city=EXCLUDED.city'''
             cur = conn.cursor()
             cur.execute(q_pg, (phone, name, email, dob, wedding, city))
             cur.close()
         conn.commit()
+        logger.info(f"Customer registered: {phone}")
     except Exception as e:
         logger.error(f"Submit Error: {e}")
         return render_template_string(HTML_BASE, title="שגיאה", content="<h3 class='error'>תקלה במערכת</h3>")
@@ -439,19 +490,26 @@ def submit():
 
 
 @app.route('/login', methods=['GET', 'POST'])
+@limiter.limit("5 per minute")
 def login():
     if request.method == 'POST':
-        if request.form.get('password') == ADMIN_PASSWORD:
+        password = request.form.get('password', '')
+        if password == ADMIN_PASSWORD:
             session['logged_in'] = True
+            session.permanent = False  # Session expires when browser closes
+            logger.info(f"Admin login from IP {get_remote_address()}")
             return redirect('/admin')
+
+        logger.warning(f"Failed admin login attempt from IP {get_remote_address()}")
         return render_template_string(HTML_BASE, title="Login",
                                       content="<h2>שגיאה</h2><p>סיסמה שגויה</p><a href='/login'>נסה שוב</a>")
 
-    content = """
+    content = f"""
     <h2>כניסת מנהל</h2>
     <form method="POST">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="form-group">
-            <input type="password" name="password" placeholder="סיסמה" required>
+            <input type="password" name="password" placeholder="סיסמה" required autocomplete="current-password">
         </div>
         <button type="submit">כניסה</button>
     </form>
@@ -460,9 +518,8 @@ def login():
 
 
 @app.route('/admin')
+@admin_required
 def admin():
-    if not session.get('logged_in'): return redirect('/login')
-
     conn, db_type = get_db()
     try:
         q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active FROM customers ORDER BY active DESC, name ASC"
@@ -485,21 +542,25 @@ def admin():
         phone = r[0]
         status = '<span class="success">פעיל</span>' if r[6] else '<span class="error">הוסר</span>'
 
+        # SECURITY: URL encode phone parameter
+        from urllib.parse import quote
         if r[6]:
-            link = url_for('toggle_status', phone=phone, action='block')
+            link = url_for('toggle_status', phone=quote(phone), action='block')
             action_btn = f'<a href="{link}" style="font-size:12px;">⛔ חסימה</a>'
         else:
-            link = url_for('toggle_status', phone=phone, action='unblock')
+            link = url_for('toggle_status', phone=quote(phone), action='unblock')
             action_btn = f'<a href="{link}" style="font-size:12px;">✅ שחזור</a>'
 
+        # SECURITY: Escape HTML to prevent XSS
+        from markupsafe import escape
         table_rows += f"""
            <tr style="border-bottom: 1px solid #eee;">
-               <td style="padding:10px; text-align:right;">{r[1]}</td>
-               <td style="padding:10px; text-align:right; font-size:12px;">{r[2] or '-'}</td>
-               <td style="padding:10px; text-align:right; font-size:12px; direction:ltr;">{phone}</td>
-               <td style="padding:10px; text-align:center; font-size:12px;">{r[3] or '-'}</td>
-               <td style="padding:10px; text-align:center; font-size:12px;">{r[4] or '-'}</td>
-               <td style="padding:10px; text-align:right; font-size:12px;">{r[5] or '-'}</td>
+               <td style="padding:10px; text-align:right;">{escape(r[1])}</td>
+               <td style="padding:10px; text-align:right; font-size:12px;">{escape(r[2] or '-')}</td>
+               <td style="padding:10px; text-align:right; font-size:12px; direction:ltr;">{escape(phone)}</td>
+               <td style="padding:10px; text-align:center; font-size:12px;">{escape(r[3] or '-')}</td>
+               <td style="padding:10px; text-align:center; font-size:12px;">{escape(r[4] or '-')}</td>
+               <td style="padding:10px; text-align:right; font-size:12px;">{escape(r[5] or '-')}</td>
                <td style="padding:10px; text-align:center;">{status}</td>
                <td style="padding:10px; text-align:center;">{action_btn}</td>
            </tr>
@@ -516,6 +577,7 @@ def admin():
         <div style="background:#fff; padding:20px; border:1px solid #eee; border-radius:8px; margin-bottom:20px;">
             <h3 style="margin-top:0;">📢 שליחת הודעה ({active_count} פעילים)</h3>
             <form action="/admin/broadcast" method="POST" onsubmit="return confirm('לשלוח לכולם?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <textarea name="message" placeholder="הקלד הודעה כאן..." required style="height:100px; margin-bottom:10px;"></textarea>
                 <div style="margin-top:5px; font-size:12px; color:gray;">* קישור הסרה יתווסף אוטומטית</div>
                 <button type="submit" style="margin-top:10px;">🚀 שלח הודעה</button>
@@ -548,11 +610,10 @@ def admin():
     return render_template_string(HTML_BASE, title="Admin", content=admin_html)
 
 
-# --- EXPORT CSV ---
 @app.route('/admin/export-csv')
+@admin_required
+@limiter.limit("10 per hour")
 def export_csv():
-    if not session.get('logged_in'): return redirect('/login')
-
     conn, db_type = get_db()
     try:
         q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active FROM customers ORDER BY name ASC"
@@ -567,23 +628,20 @@ def export_csv():
     finally:
         conn.close()
 
-    # Create CSV in memory
     output = io.StringIO()
     writer = csv.writer(output, lineterminator='\n')
-
-    # Header
     writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'סטטוס'])
 
-    # Data
     for r in rows:
         status = 'פעיל' if r[6] else 'הוסר'
         writer.writerow([r[1], r[0], r[2] or '', r[3] or '', r[4] or '', r[5] or '', status])
 
-    # Convert to bytes
     output.seek(0)
     mem = io.BytesIO()
-    mem.write(output.getvalue().encode('utf-8-sig'))  # UTF-8 with BOM for Excel
+    mem.write(output.getvalue().encode('utf-8-sig'))
     mem.seek(0)
+
+    logger.info(f"CSV export by admin from IP {get_remote_address()}")
 
     return send_file(
         mem,
@@ -593,13 +651,13 @@ def export_csv():
     )
 
 
-# --- BROADCAST ---
 @app.route('/admin/broadcast', methods=['POST'])
+@admin_required
+@limiter.limit("3 per hour")
 def broadcast():
-    if not session.get('logged_in'): return redirect('/login')
-
-    message = request.form.get('message')
-    if not message: return redirect('/admin')
+    message = request.form.get('message', '').strip()
+    if not message or len(message) > 1000:
+        return redirect(url_for('admin', msg="הודעה לא תקינה"))
 
     conn, db_type = get_db()
     try:
@@ -608,13 +666,14 @@ def broadcast():
             cur = conn.cursor()
             cur.execute(q)
             recipients = cur.fetchall()
+            cur.close()
         else:
             recipients = conn.execute(q).fetchall()
     finally:
         conn.close()
 
     qstash_token = os.environ.get("QSTASH_TOKEN")
-    base_url = "https://oshioshi-gedera-sms.vercel.app"
+    base_url = request.url_root.rstrip('/')
     target_endpoint = f"{base_url}/api/send_sms_task"
 
     if qstash_token:
@@ -639,21 +698,30 @@ def broadcast():
                 )
                 count += 1
             except Exception as e:
-                print(f"Failed to queue {phone}: {e}")
+                logger.error(f"Failed to queue {phone}: {e}")
 
+        logger.info(f"Broadcast queued for {count} recipients by admin from IP {get_remote_address()}")
         return redirect(url_for('admin', msg=f"ההודעות נשלחו לתור (נשלח ל-{count} לקוחות)"))
     else:
+        logger.error("Missing QSTASH_TOKEN")
         return redirect(url_for('admin', msg="שגיאה: חסר QSTASH_TOKEN"))
 
 
+# SECURITY: Exempt API endpoint from CSRF (uses secret verification instead)
 @app.route('/api/send_sms_task', methods=['POST'])
+@csrf.exempt
+@limiter.limit("100 per minute")
 def send_sms_task():
     data = request.json
-    if data.get('secret') != app.secret_key:
+    if not data or data.get('secret') != app.secret_key:
+        logger.warning(f"Unauthorized API access from {get_remote_address()}")
         return "Unauthorized", 401
 
-    phone = data.get('phone')
-    message = data.get('message')
+    phone = data.get('phone', '').strip()
+    message = data.get('message', '').strip()
+
+    if not phone or not message:
+        return jsonify({"status": "error", "error": "Missing parameters"}), 400
 
     token = generate_secure_token(phone)
     clean = phone.replace('+', '')
@@ -672,27 +740,32 @@ def send_sms_task():
 
 
 @app.route('/unsubscribe/<phone>')
+@limiter.limit("10 per minute")
 def unsubscribe(phone):
     token = request.args.get('token')
-    if not token: abort(403, "Missing Token")
+    if not token:
+        logger.warning(f"Unsubscribe attempt without token from {get_remote_address()}")
+        abort(403, "Missing Token")
 
+    # SECURITY: Sanitize phone input
+    phone = re.sub(r'[^\d+]', '', phone)[:20]
     candidate_phone = "+" + phone if not phone.startswith('+') else phone
+
     if not verify_token(candidate_phone, token):
         if not verify_token(phone, token):
+            logger.warning(f"Invalid unsubscribe token for {phone} from {get_remote_address()}")
             abort(403, "Invalid Signature")
 
     try:
         conn, db_type = get_db()
-        q_sql = "UPDATE customers SET active=0 WHERE phone=?"
-        q_pg = "UPDATE customers SET active=FALSE WHERE phone=%s"
-
         if db_type == "sqlite":
-            conn.execute(q_sql, (candidate_phone,))
+            conn.execute("UPDATE customers SET active=0 WHERE phone=?", (candidate_phone,))
         else:
             cur = conn.cursor()
-            cur.execute(q_pg, (candidate_phone,))
+            cur.execute("UPDATE customers SET active=FALSE WHERE phone=%s", (candidate_phone,))
             cur.close()
         conn.commit()
+        logger.info(f"Customer unsubscribed: {candidate_phone}")
     finally:
         if 'conn' in locals(): conn.close()
 
@@ -701,17 +774,19 @@ def unsubscribe(phone):
 
 
 @app.route('/admin/toggle')
+@admin_required
 def toggle_status():
-    if not session.get('logged_in'): return redirect('/login')
-    phone = request.args.get('phone')
-    action = request.args.get('action')
-    if not phone or not action: return redirect('/admin')
+    phone = request.args.get('phone', '').strip()
+    action = request.args.get('action', '').strip()
 
-    clean_phone = phone.strip()
-    if not clean_phone.startswith('+') and clean_phone.startswith('972'):
-        clean_phone = '+' + clean_phone
-    elif not clean_phone.startswith('+'):
-        clean_phone = '+' + clean_phone.lstrip()
+    if not phone or action not in ['block', 'unblock']:
+        logger.warning(f"Invalid toggle attempt from {get_remote_address()}")
+        return redirect('/admin')
+
+    # SECURITY: Sanitize phone input
+    clean_phone = re.sub(r'[^\d+]', '', phone)[:20]
+    if not clean_phone.startswith('+'):
+        clean_phone = '+' + clean_phone.lstrip('+')
 
     conn, db_type = get_db()
     try:
@@ -724,6 +799,7 @@ def toggle_status():
             cur.execute("UPDATE customers SET active=%s WHERE phone=%s", (pg_bool, clean_phone))
             cur.close()
         conn.commit()
+        logger.info(f"Customer {clean_phone} {'unblocked' if action == 'unblock' else 'blocked'} by admin")
     finally:
         conn.close()
     return redirect('/admin')
@@ -732,7 +808,29 @@ def toggle_status():
 @app.route('/logout')
 def logout():
     session.clear()
+    logger.info(f"Admin logout from IP {get_remote_address()}")
     return redirect('/')
+
+
+# Error handlers
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template_string(HTML_BASE, title="Access Denied",
+                                  content="<h2 class='error'>⛔ גישה נדחתה</h2><a href='/'>חזור</a>"), 403
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    logger.warning(f"Rate limit exceeded from {get_remote_address()}")
+    return render_template_string(HTML_BASE, title="Too Many Requests",
+                                  content="<h2 class='error'>יותר מדי בקשות</h2><p>נסה שוב מאוחר יותר</p>"), 429
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    logger.error(f"Internal error: {e}")
+    return render_template_string(HTML_BASE, title="Error",
+                                  content="<h2 class='error'>שגיאת שרת</h2>"), 500
 
 
 try:
@@ -742,5 +840,4 @@ except Exception as e:
     logger.error(f"Automatic DB Init failed on startup: {e}")
 
 if __name__ == '__main__':
-    # init_db()  <-- DELETE THIS LINE FROM HERE
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=False)  # Set debug=False in production
