@@ -272,6 +272,15 @@ HTML_BASE = """
         a { color: #1976d2; text-decoration: none; font-size: 14px; }
         a:hover { text-decoration: underline; }
         .small-text { font-size: 12px; color: #999; margin-top: 12px; display: block; }
+        .city-name { 
+            font-size: 42px; 
+            font-weight: 900; 
+            color: #d32f2f; 
+            margin-top: 10px;
+            font-family: 'Georgia', 'Times New Roman', serif;
+            letter-spacing: 4px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
@@ -298,6 +307,10 @@ def home():
     # FIX: Use f-string to inject the token variable directly
     content = f"""
         <h2>מועדון ה-VIP שלנו</h2>
+        <!-- NEW: Gedera Text -->
+        <div style="text-align: center; margin-bottom: 20px;">
+            <div class="city-name">GEDERA</div>
+        </div>
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
         <form action="/submit" method="POST">
             <input type="hidden" name="csrf_token" value="{token}">
@@ -359,6 +372,26 @@ def submit():
 
     try:
         conn, db_type = get_db()
+
+        # --- NEW LOGIC START ---
+
+        # 1. Check if customer already exists
+        if db_type == "sqlite":
+            existing = conn.execute("SELECT phone, active FROM customers WHERE phone=?", (phone,)).fetchone()
+        else:
+            cur = conn.cursor()
+            cur.execute("SELECT phone, active FROM customers WHERE phone=%s", (phone,))
+            existing = cur.fetchone()
+            cur.close()
+
+        # 2. If customer exists and is ACTIVE -> Show Error
+        if existing:
+            is_active = existing[1]
+            if is_active:
+                return render_template_string(HTML_BASE, title="כבר רשום",
+                                              content="<h2 class='error'>⚠️ אתה כבר רשום למועדון!</h2><p>המספר שלך כבר קיים במערכת.</p><a href='/'>חזור לדף הבית</a>")
+
+        # 3. If NOT exists OR inactive -> Proceed with Insert/Update
         if db_type == "sqlite":
             q_sql = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
                        VALUES (?, ?, ?, ?, ?, ?, 1) 
@@ -373,6 +406,9 @@ def submit():
             cur = conn.cursor()
             cur.execute(q_pg, (phone, name, email, dob, wedding, city))
             cur.close()
+
+        # --- NEW LOGIC END ---
+
         conn.commit()
         logger.info(f"Customer registered: {phone}")
     except Exception as e:
@@ -418,7 +454,8 @@ def login():
 def admin():
     conn, db_type = get_db()
     try:
-        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active FROM customers ORDER BY active DESC, name ASC"
+        # UPDATED QUERY: Added 'created_at' at the end
+        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at FROM customers ORDER BY active DESC, name ASC"
         if db_type == "sqlite":
             cur = conn.execute(q)
             rows = cur.fetchall()
@@ -438,12 +475,24 @@ def admin():
         phone = r[0]
         status = '<span class="success">פעיל</span>' if r[6] else '<span class="error">הוסר</span>'
 
+        # NEW: Format Registration Date (index 7)
+        reg_date = r[7] if len(r) > 7 else None
+        if reg_date:
+            if isinstance(reg_date, str):
+                reg_date_formatted = reg_date.split(' ')[0]  # Remove time, keep date
+            else:
+                reg_date_formatted = reg_date.strftime('%Y-%m-%d')
+        else:
+            reg_date_formatted = '-'
+
         if r[6]:
-            link = url_for('toggle_status', phone=phone, action='block')  # CORRECT
+            link = url_for('toggle_status', phone=phone, action='block')
             action_btn = f'<a href="{link}" style="font-size:12px;">⛔ חסימה</a>'
         else:
-            link = url_for('toggle_status', phone=phone, action='unblock')  # CORRECT
+            link = url_for('toggle_status', phone=phone, action='unblock')
             action_btn = f'<a href="{link}" style="font-size:12px;">✅ שחזור</a>'
+
+        # UPDATED ROW HTML
         table_rows += f"""
            <tr style="border-bottom: 1px solid #eee;">
                <td style="padding:10px; text-align:right;">{escape(r[1])}</td>
@@ -452,6 +501,8 @@ def admin():
                <td style="padding:10px; text-align:center; font-size:12px;">{escape(r[3] or '-')}</td>
                <td style="padding:10px; text-align:center; font-size:12px;">{escape(r[4] or '-')}</td>
                <td style="padding:10px; text-align:right; font-size:12px;">{escape(r[5] or '-')}</td>
+               <!-- NEW DATE COLUMN -->
+               <td style="padding:10px; text-align:center; font-size:12px;">{reg_date_formatted}</td>
                <td style="padding:10px; text-align:center;">{status}</td>
                <td style="padding:10px; text-align:center;">{action_btn}</td>
            </tr>
