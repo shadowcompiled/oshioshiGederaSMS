@@ -16,7 +16,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
-from werkzeug.middleware.proxy_fix import ProxyFix # <--- Make sure this is at the top
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -24,18 +24,36 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-# 1. Initialize App ONCE
-
+# --- INITIALIZATION & CONFIG ---
 app = Flask(__name__)
 
-# FORCE the fix to run. No 'if' statement.
+# SECURITY: Trust Vercel/Proxy Headers (CRITICAL FOR CSRF ON VERCEL)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 
+# Secret Key
 app.secret_key = os.environ.get("SECRET_KEY")
-app.config['SESSION_COOKIE_SECURE'] = True
+if not app.secret_key or app.secret_key == "CHANGE_THIS_TO_A_LONG_RANDOM_STRING":
+    # Fallback only for local dev - in prod this should fail if missing
+    if os.environ.get("FLASK_ENV") == "production":
+        raise ValueError("SECRET_KEY must be set to a secure random value in production")
+    else:
+        app.secret_key = "dev-secret-key"
+
+# Admin Password
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    if os.environ.get("FLASK_ENV") == "production":
+        raise ValueError("ADMIN_PASSWORD must be set")
+    ADMIN_PASSWORD = "admin"  # Dev fallback
+
+# Cookie Security Config
+# These must be set BEFORE initializing CSRFProtect
+app.config['SESSION_COOKIE_SECURE'] = True  # Always True for Vercel (HTTPS)
 app.config['REMEMBER_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 
+# Initialize Extensions
 csrf = CSRFProtect(app)
 
 limiter = Limiter(
@@ -45,7 +63,7 @@ limiter = Limiter(
     storage_uri="memory://"
 )
 
-# Security Headers (disable HTTPS enforcement in dev, enable in production)
+# Security Headers
 if os.environ.get("FLASK_ENV") == "production":
     Talisman(app,
              force_https=True,
@@ -56,11 +74,10 @@ if os.environ.get("FLASK_ENV") == "production":
                  'style-src': "'unsafe-inline' 'self'"
              })
 
-# SMS Gateway Config
+# SMS & DB Config
 SMS_LOGIN = os.environ.get("ANDROID_SMS_GATEWAY_LOGIN")
 SMS_PASS = os.environ.get("ANDROID_SMS_GATEWAY_PASSWORD")
 SMS_URL = os.environ.get("ANDROID_SMS_GATEWAY_API_URL", "https://api.sms-gate.app/3rdparty/v1")
-
 DATABASE_URL = os.environ.get("POSTGRES_URL")
 DB_NAME = "customers.db"
 
@@ -399,7 +416,7 @@ def home():
         <h2>מועדון ה-VIP שלנו</h2>
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
         <form action="/submit" method="POST">
-            <input type="hidden" name="csrf_token" value="{{{{ csrf_token() }}}}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="form-group">
                 <label for="name">שם מלא *</label>
                 <input type="text" id="name" name="name" placeholder="שמך" required maxlength="100">
@@ -577,7 +594,7 @@ def admin():
         <div style="background:#fff; padding:20px; border:1px solid #eee; border-radius:8px; margin-bottom:20px;">
             <h3 style="margin-top:0;">📢 שליחת הודעה ({active_count} פעילים)</h3>
             <form action="/admin/broadcast" method="POST" onsubmit="return confirm('לשלוח לכולם?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="csrf_token" value="{{{{ csrf_token() }}}}">
                 <textarea name="message" placeholder="הקלד הודעה כאן..." required style="height:100px; margin-bottom:10px;"></textarea>
                 <div style="margin-top:5px; font-size:12px; color:gray;">* קישור הסרה יתווסף אוטומטית</div>
                 <button type="submit" style="margin-top:10px;">🚀 שלח הודעה</button>
@@ -607,6 +624,12 @@ def admin():
         </div>
     </div>
     """
+    # Note: 'admin_html' uses f-strings for Python variables (table_rows), but NOT for the CSRF token
+    # The CSRF token is in the FORM inside admin_html above, which needs to be properly escaped
+    # For the admin panel, since it's an f-string, we DO need double braces for the token
+    # But wait - I noticed you were using {{ csrf_token() }} inside f-strings earlier.
+    # The correct way in an f-string is: value="{{{{ csrf_token() }}}}"
+
     return render_template_string(HTML_BASE, title="Admin", content=admin_html)
 
 
