@@ -306,11 +306,11 @@ def home():
 
     # FIX: Use f-string to inject the token variable directly
     content = f"""
-        <h2>מועדון ה-VIP שלנו</h2>
-        <!-- NEW: Gedera Text -->
         <div style="text-align: center; margin-bottom: 20px;">
             <div class="city-name">GEDERA</div>
         </div>
+        <h2>מועדון ה-VIP שלנו</h2>
+        <!-- NEW: Gedera Text -->
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
         <form action="/submit" method="POST">
             <input type="hidden" name="csrf_token" value="{token}">
