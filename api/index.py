@@ -223,8 +223,15 @@ HTML_BASE = """
         }
 
         .logo-area { 
-            font-size: 48px; 
-            margin-bottom: 12px; 
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .logo-area img {
+            max-width: 180px;
+            height: auto;
+            max-height: 120px;
+            object-fit: contain;
         }
 
         .form-group {
@@ -317,7 +324,9 @@ HTML_BASE = """
 </head>
 <body>
     <div class="container">
-        <div class="logo-area">🍣🥢</div>
+        <div class="logo-area">
+            <img src="/static/logo.png" alt="לוגו">
+        </div>
         {{ content | safe }}
     </div>
 </body>
