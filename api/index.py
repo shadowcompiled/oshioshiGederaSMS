@@ -222,17 +222,21 @@ HTML_BASE = """
             line-height: 1.5;
         }
 
+        /* --- UPDATED LOGO CSS --- */
         .logo-area { 
             margin-bottom: 20px;
             text-align: center;
+            display: flex;
+            justify-content: center;
         }
 
         .logo-area img {
-            max-width: 180px;
-            height: auto;
-            max-height: 120px;
+            width: 401px;        /* Force EXACT width requested */
+            height: auto;        /* Maintain aspect ratio height (approx 126px) */
+            max-width: 100%;     /* Ensure it shrinks on very small phones */
             object-fit: contain;
         }
+        /* ------------------------ */
 
         .form-group {
             margin-bottom: 14px;
