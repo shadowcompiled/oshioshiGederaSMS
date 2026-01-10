@@ -8,13 +8,13 @@ import hmac
 import hashlib
 import csv
 import io
+import pytz  # Required for Israel Time
 from flask import Flask, request, render_template_string, jsonify, session, redirect, url_for, abort, send_file
-from urllib.parse import urlparse
-from urllib.parse import quote  # Added for admin route
-from markupsafe import escape  # Added for admin route
+from urllib.parse import urlparse, quote
+from markupsafe import escape
 from dotenv import load_dotenv
 from datetime import datetime
-from flask_wtf.csrf import CSRFProtect, generate_csrf  # <--- Added generate_csrf
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
@@ -219,6 +219,8 @@ HTML_BASE = """
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>{{ title }}</title>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@800&display=swap'); /* For GEDERA */
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         @keyframes slideShow {
             0% { background-image: url('/static/bg1.png'); }
@@ -248,8 +250,22 @@ HTML_BASE = """
         }
         h2 { color: #d32f2f; margin-bottom: 8px; font-size: 24px; font-weight: 700; }
         p { color: #666; margin-bottom: 16px; font-size: 14px; line-height: 1.5; }
-        .logo-area { margin-bottom: 20px; text-align: center; display: flex; justify-content: center; }
+
+        /* NEW: GEDERA TITLE STYLE */
+        .gedera-title {
+            font-family: 'Montserrat', sans-serif;
+            font-size: 32px;
+            font-weight: 800;
+            letter-spacing: 4px;
+            color: #d32f2f; /* Matching the red theme */
+            margin-top: -10px;
+            margin-bottom: 20px;
+            text-transform: uppercase;
+        }
+
+        .logo-area { margin-bottom: 5px; text-align: center; display: flex; justify-content: center; flex-direction: column; align-items: center;}
         .logo-area img { width: 401px; height: auto; max-width: 100%; object-fit: contain; }
+
         .form-group { margin-bottom: 14px; text-align: right; }
         label { display: block; font-size: 12px; color: #333; margin-bottom: 4px; font-weight: 600; text-align: right; }
         input, textarea, select { 
@@ -278,6 +294,7 @@ HTML_BASE = """
     <div class="container">
         <div class="logo-area">
             <img src="/static/logo.png" alt="לוגו">
+            <div class="gedera-title">GEDERA</div>
         </div>
         {{ content | safe }}
     </div>
@@ -291,11 +308,8 @@ HTML_BASE = """
 @app.route('/')
 @limiter.limit("20 per minute")
 def home():
-    random_bg = get_random_bg()
-    # FIX: Generate token here
     token = generate_csrf()
 
-    # FIX: Use f-string to inject the token variable directly
     content = f"""
         <h2>מועדון ה-VIP שלנו</h2>
         <p>הירשמו לקבלת הטבות בלעדיות, מבצעי 1+1 ועדכונים חמים!</p>
@@ -359,22 +373,36 @@ def submit():
 
     try:
         conn, db_type = get_db()
+
+        # 3. CHECK IF EXISTS FIRST
         if db_type == "sqlite":
-            q_sql = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
-                       VALUES (?, ?, ?, ?, ?, ?, 1) 
-                       ON CONFLICT(phone) DO UPDATE SET active=1, name=excluded.name, email=excluded.email, 
-                       date_of_birth=excluded.date_of_birth, wedding_day=excluded.wedding_day, city=excluded.city'''
-            conn.execute(q_sql, (phone, name, email, dob, wedding, city))
+            cursor = conn.execute("SELECT 1 FROM customers WHERE phone=?", (phone,))
+            exists = cursor.fetchone()
         else:
-            q_pg = '''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
-                      VALUES (%s, %s, %s, %s, %s, %s, TRUE) 
-                      ON CONFLICT(phone) DO UPDATE SET active=TRUE, name=EXCLUDED.name, email=EXCLUDED.email,
-                      date_of_birth=EXCLUDED.date_of_birth, wedding_day=EXCLUDED.wedding_day, city=EXCLUDED.city'''
             cur = conn.cursor()
-            cur.execute(q_pg, (phone, name, email, dob, wedding, city))
+            cur.execute("SELECT 1 FROM customers WHERE phone=%s", (phone,))
+            exists = cur.fetchone()
             cur.close()
+
+        if exists:
+            # User already exists - show message
+            return render_template_string(HTML_BASE, title="רשום כבר",
+                                          content="<h2 class='error'>הי! אתה כבר רשום למועדון 🍣</h2><p>שמחים שאתה איתנו!</p><a href='/'>חזור לדף הבית</a>")
+
+        # NEW USER INSERT
+        # Note: created_at is handled by DEFAULT CURRENT_TIMESTAMP in DB schema
+        if db_type == "sqlite":
+            conn.execute('''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
+                            VALUES (?, ?, ?, ?, ?, ?, 1)''', (phone, name, email, dob, wedding, city))
+        else:
+            cur = conn.cursor()
+            cur.execute('''INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) 
+                           VALUES (%s, %s, %s, %s, %s, %s, TRUE)''', (phone, name, email, dob, wedding, city))
+            cur.close()
+
         conn.commit()
-        logger.info(f"Customer registered: {phone}")
+        logger.info(f"New Customer registered: {phone}")
+
     except Exception as e:
         logger.error(f"Submit Error: {e}")
         return render_template_string(HTML_BASE, title="שגיאה", content="<h3 class='error'>תקלה במערכת</h3>")
@@ -398,7 +426,6 @@ def login():
         return render_template_string(HTML_BASE, title="Login",
                                       content="<h2>שגיאה</h2><p>סיסמה שגויה</p><a href='/login'>נסה שוב</a>")
 
-    # FIX: Generate token here
     token = generate_csrf()
     content = f"""
     <h2>כניסת מנהל</h2>
@@ -418,7 +445,8 @@ def login():
 def admin():
     conn, db_type = get_db()
     try:
-        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active FROM customers ORDER BY active DESC, name ASC"
+        # 2. ADDED created_at TO QUERY
+        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at FROM customers ORDER BY active DESC, name ASC"
         if db_type == "sqlite":
             cur = conn.execute(q)
             rows = cur.fetchall()
@@ -438,12 +466,26 @@ def admin():
         phone = r[0]
         status = '<span class="success">פעיל</span>' if r[6] else '<span class="error">הוסר</span>'
 
+        # Parse created_at for display (r[7])
+        reg_date = "-"
+        if r[7]:
+            try:
+                # Handle both string (sqlite) and datetime object (postgres)
+                if isinstance(r[7], str):
+                    dt = datetime.fromisoformat(r[7])
+                else:
+                    dt = r[7]
+                reg_date = dt.strftime('%d/%m/%Y')
+            except Exception:
+                pass
+
         if r[6]:
-            link = url_for('toggle_status', phone=phone, action='block')  # CORRECT
+            link = url_for('toggle_status', phone=phone, action='block')
             action_btn = f'<a href="{link}" style="font-size:12px;">⛔ חסימה</a>'
         else:
-            link = url_for('toggle_status', phone=phone, action='unblock')  # CORRECT
+            link = url_for('toggle_status', phone=phone, action='unblock')
             action_btn = f'<a href="{link}" style="font-size:12px;">✅ שחזור</a>'
+
         table_rows += f"""
            <tr style="border-bottom: 1px solid #eee;">
                <td style="padding:10px; text-align:right;">{escape(r[1])}</td>
@@ -452,12 +494,12 @@ def admin():
                <td style="padding:10px; text-align:center; font-size:12px;">{escape(r[3] or '-')}</td>
                <td style="padding:10px; text-align:center; font-size:12px;">{escape(r[4] or '-')}</td>
                <td style="padding:10px; text-align:right; font-size:12px;">{escape(r[5] or '-')}</td>
+               <td style="padding:10px; text-align:center; font-size:12px;">{reg_date}</td> <!-- New Date Column -->
                <td style="padding:10px; text-align:center;">{status}</td>
                <td style="padding:10px; text-align:center;">{action_btn}</td>
            </tr>
            """
 
-    # FIX: Generate token here
     token = generate_csrf()
     admin_html = f"""
     <div style="direction:rtl; text-align:right;">
@@ -489,6 +531,7 @@ def admin():
                         <th style="padding:10px; text-align:center;">תאריך לידה</th>
                         <th style="padding:10px; text-align:center;">יום חתונה</th>
                         <th style="padding:10px; text-align:right;">עיר</th>
+                        <th style="padding:10px; text-align:center;">נרשם ב</th> <!-- New Header -->
                         <th style="padding:10px; text-align:center;">סטטוס</th>
                         <th style="padding:10px; text-align:center;">פעולה</th>
                     </tr>
@@ -510,7 +553,7 @@ def admin():
 def export_csv():
     conn, db_type = get_db()
     try:
-        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active FROM customers ORDER BY name ASC"
+        q = "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at FROM customers ORDER BY name ASC"
         if db_type == "sqlite":
             cur = conn.execute(q)
             rows = cur.fetchall()
@@ -524,11 +567,12 @@ def export_csv():
 
     output = io.StringIO()
     writer = csv.writer(output, lineterminator='\n')
-    writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'סטטוס'])
+    writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'תאריך הרשמה', 'סטטוס'])
 
     for r in rows:
         status = 'פעיל' if r[6] else 'הוסר'
-        writer.writerow([r[1], r[0], r[2] or '', r[3] or '', r[4] or '', r[5] or '', status])
+        reg_date = str(r[7]) if r[7] else ''
+        writer.writerow([r[1], r[0], r[2] or '', r[3] or '', r[4] or '', r[5] or '', reg_date, status])
 
     output.seek(0)
     mem = io.BytesIO()
@@ -632,22 +676,18 @@ def send_sms_task():
             "withDeliveryReport": True
         }
 
-        # We try the new format first.
-        # If your gateway version is very old, we can fallback, but this is the standard now.
         resp = requests.post(
             f"{SMS_URL.rstrip('/')}/messages",
             json=payload,
             auth=(SMS_LOGIN, SMS_PASS),
-            timeout=15  # Increased timeout slightly
+            timeout=15
         )
 
-        # Logging the actual response for debugging
         if not resp.ok:
             logger.error(f"SMS Gateway Error {resp.status_code}: {resp.text}")
 
         resp.raise_for_status()
         return jsonify({"status": "sent", "phone": phone, "gateway_response": resp.json()})
-
     except Exception as e:
         logger.error(f"Worker SMS Fail {phone}: {e}")
         return jsonify({"status": "error", "error": str(e)}), 500
@@ -695,37 +735,29 @@ def toggle_status():
     if not phone or action not in ['block', 'unblock']:
         return redirect('/admin')
 
-    # FIX: Handle the case where '+' was converted to a space by the browser/server
     if phone.startswith(' '):
         phone = '+' + phone.lstrip()
 
-    # FIX: Ensure it starts with + if it looks like a country code number (972...)
-    # This catches cases where the '+' was stripped entirely
-    clean_phone = re.sub(r'[^\d]', '', phone)  # remove non-digits temporarily
+    clean_phone = re.sub(r'[^\d]', '', phone)
     if clean_phone.startswith('972'):
         formatted_phone = '+' + clean_phone
     else:
-        # Fallback: trust the input but ensure it has a + if it was intended
         formatted_phone = phone if phone.startswith('+') else '+' + clean_phone
 
-    # Final sanity check: Limit length to avoid DB errors
     formatted_phone = formatted_phone[:20]
 
     conn, db_type = get_db()
     try:
         if db_type == "sqlite":
             new_status = 1 if action == 'unblock' else 0
-            # Try exact match first
             cursor = conn.execute("UPDATE customers SET active=? WHERE phone=?", (new_status, formatted_phone))
             if cursor.rowcount == 0:
-                # If no rows affected, try without the plus or with the space (fuzzy fix)
                 conn.execute("UPDATE customers SET active=? WHERE phone LIKE ?", (new_status, f"%{clean_phone}"))
         else:
             cur = conn.cursor()
             pg_bool = True if action == 'unblock' else False
             cur.execute("UPDATE customers SET active=%s WHERE phone=%s", (pg_bool, formatted_phone))
             if cur.rowcount == 0:
-                # Postgres fallback
                 cur.execute("UPDATE customers SET active=%s WHERE phone LIKE %s", (pg_bool, f"%{clean_phone}"))
             cur.close()
         conn.commit()
