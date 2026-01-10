@@ -67,7 +67,13 @@ def get_db():
 
 @app.route('/force-init')
 def force_init():
+    # --- SECURITY FIX START ---
+    if not session.get('logged_in'):
+        return "⛔ Access Denied: Admins only", 403
+    # --- SECURITY FIX END ---
+
     try:
+        conn, db_type = get_db()
         conn, db_type = get_db()
         if db_type == "postgres":
             cur = conn.cursor()
@@ -356,20 +362,20 @@ def home():
                 <input type="tel" id="phone" name="phone" placeholder="050-1234567" required maxlength="20">
             </div>
             <div class="form-group">
-                <label for="email">דוא"ל</label>
-                <input type="email" id="email" name="email" placeholder="example@email.com">
+                <label for="email">דוא"ל *</label>
+                <input type="email" id="email" name="email" placeholder="example@email.com" required>
             </div>
             <div class="form-group">
-                <label for="dob">תאריך לידה</label>
-                <input type="date" id="dob" name="date_of_birth">
+                <label for="dob">תאריך לידה *</label>
+                <input type="date" id="dob" name="date_of_birth" required>
             </div>
             <div class="form-group">
-                <label for="wedding">יום חתונה</label>
-                <input type="date" id="wedding" name="wedding_day">
+                <label for="wedding">יום חתונה *</label>
+                <input type="date" id="wedding" name="wedding_day" required>
             </div>
             <div class="form-group">
-                <label for="city">עיר</label>
-                <input type="text" id="city" name="city" placeholder="גדרה" maxlength="50">
+                <label for="city">עיר *</label>
+                <input type="text" id="city" name="city" placeholder="גדרה" maxlength="50" required>
             </div>
             <button type="submit">הצטרף למועדון</button>
         </form>
@@ -380,6 +386,7 @@ def home():
 
 @app.route('/submit', methods=['POST'])
 def submit():
+    # Get all fields
     name = request.form.get('name', '').strip()
     raw_phone = request.form.get('phone', '').strip()
     email = request.form.get('email', '').strip()
@@ -387,11 +394,21 @@ def submit():
     wedding = request.form.get('wedding_day', '').strip()
     city = request.form.get('city', '').strip()
 
+    # --- VALIDATION FIX START ---
+    # Check if ANY field is empty
+    if not all([name, raw_phone, email, dob, wedding, city]):
+         return render_template_string(HTML_BASE, title="שגיאה",
+                                      content="<h3 class='error'>אנא מלא את כל שדות החובה</h3><a href='/'>חזור</a>")
     phone = format_phone(raw_phone)
 
     if len(phone) < 10 or not phone.startswith('+'):
         return render_template_string(HTML_BASE, title="שגיאה",
                                       content="<h3 class='error'>מספר טלפון לא תקין</h3><a href='/'>חזור</a>")
+
+    email_regex = r'^[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+$'
+    if not re.match(email_regex, email):
+        return render_template_string(HTML_BASE, title="שגיאה",
+                                      content="<h3 class='error'>כתובת דוא\"ל לא תקינה</h3><a href='/'>חזור</a>")
 
     try:
         conn, db_type = get_db()
@@ -718,6 +735,12 @@ def logout():
     return redirect('/')
 
 
+try:
+    with app.app_context():
+        init_db()
+except Exception as e:
+    logger.error(f"Automatic DB Init failed on startup: {e}")
+
 if __name__ == '__main__':
-    init_db()
+    # init_db()  <-- DELETE THIS LINE FROM HERE
     app.run(host='0.0.0.0', port=5000, debug=True)
