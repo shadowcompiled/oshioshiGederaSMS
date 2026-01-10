@@ -16,6 +16,7 @@ from flask_wtf.csrf import CSRFProtect
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_talisman import Talisman
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # Configure Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,9 +24,11 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
+# 1. Initialize App ONCE
+
 app = Flask(__name__)
 
-# SECURITY CONFIG - ENHANCED
+# 2. Global Config (Applies to both Dev and Prod)
 app.secret_key = os.environ.get("SECRET_KEY")
 if not app.secret_key or app.secret_key == "CHANGE_THIS_TO_A_LONG_RANDOM_STRING":
     raise ValueError("SECRET_KEY must be set to a secure random value in production")
@@ -34,17 +37,22 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
     raise ValueError("ADMIN_PASSWORD must be changed from default value")
 
-# --- ADD THE LINES HERE ---
-# Only enable Secure cookies in production (Vercel uses HTTPS)
+# 3. Production-Specific Security (Vercel)
 if os.environ.get("FLASK_ENV") == "production":
+    # Trust Vercel's proxy headers so 'Secure' cookies work
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+    # Enforce HTTPS-only cookies
     app.config['SESSION_COOKIE_SECURE'] = True
     app.config['REMEMBER_COOKIE_SECURE'] = True
+    app.config['SESSION_COOKIE_HTTPONLY'] = True
 
+# 4. Shared Cookie Security (Always Safe)
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-# CSRF Protection
+
+# 5. Initialize Extensions
 csrf = CSRFProtect(app)
 
-# Rate Limiting
 limiter = Limiter(
     app=app,
     key_func=get_remote_address,
