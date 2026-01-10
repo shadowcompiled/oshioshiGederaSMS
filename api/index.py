@@ -34,6 +34,13 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
 if not ADMIN_PASSWORD or ADMIN_PASSWORD == "admin":
     raise ValueError("ADMIN_PASSWORD must be changed from default value")
 
+# --- ADD THE LINES HERE ---
+# Only enable Secure cookies in production (Vercel uses HTTPS)
+if os.environ.get("FLASK_ENV") == "production":
+    app.config['SESSION_COOKIE_SECURE'] = True
+    app.config['REMEMBER_COOKIE_SECURE'] = True
+
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 # CSRF Protection
 csrf = CSRFProtect(app)
 
