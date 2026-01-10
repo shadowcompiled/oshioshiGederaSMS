@@ -564,8 +564,8 @@ def admin():
                         <th style="padding:10px; text-align:center;">תאריך לידה</th>
                         <th style="padding:10px; text-align:center;">יום חתונה</th>
                         <th style="padding:10px; text-align:right;">עיר</th>
+                        <th style="padding:10px; text-align:center;">תאריך רישום</th>
                         <th style="padding:10px; text-align:center;">סטטוס</th>
-                        <th style="padding:10px; text-align:center;">פעולה</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -599,7 +599,7 @@ def export_csv():
 
     output = io.StringIO()
     writer = csv.writer(output, lineterminator='\n')
-    writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'סטטוס'])
+    writer.writerow(['שם', 'טלפון', 'דוא"ל', 'תאריך לידה', 'יום חתונה', 'עיר', 'תאריך רישום','סטטוס'])
 
     for r in rows:
         status = 'פעיל' if r[6] else 'הוסר'
