@@ -65,6 +65,43 @@ def get_db():
         print(f"CRITICAL DB ERROR: {e}")
         raise
 
+@app.route('/force-init')
+def force_init():
+    try:
+        conn, db_type = get_db()
+        if db_type == "postgres":
+            cur = conn.cursor()
+            cur.execute('DROP TABLE IF EXISTS customers CASCADE;')
+            cur.execute('''
+                CREATE TABLE customers (
+                    phone TEXT PRIMARY KEY,
+                    name TEXT,
+                    email TEXT,
+                    date_of_birth TEXT,
+                    wedding_day TEXT,
+                    city TEXT,
+                    active BOOLEAN DEFAULT TRUE
+                );
+            ''')
+            cur.close()
+        else:
+            conn.execute('DROP TABLE IF EXISTS customers;')
+            conn.execute('''
+                CREATE TABLE customers (
+                    phone TEXT PRIMARY KEY,
+                    name TEXT,
+                    email TEXT,
+                    date_of_birth TEXT,
+                    wedding_day TEXT,
+                    city TEXT,
+                    active BOOLEAN DEFAULT 1
+                );
+            ''')
+        conn.commit()
+        conn.close()
+        return "✅ Table 'customers' created successfully!"
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 def init_db():
     try:
@@ -319,7 +356,7 @@ def home():
             </div>
             <div class="form-group">
                 <label for="city">עיר</label>
-                <input type="text" id="city" name="city" placeholder="תל אביב" maxlength="50">
+                <input type="text" id="city" name="city" placeholder="גדרה" maxlength="50">
             </div>
             <button type="submit">הצטרף למועדון</button>
         </form>
