@@ -439,12 +439,11 @@ def admin():
         status = '<span class="success">פעיל</span>' if r[6] else '<span class="error">הוסר</span>'
 
         if r[6]:
-            link = url_for('toggle_status', phone=quote(phone), action='block')
+            link = url_for('toggle_status', phone=phone, action='block')  # CORRECT
             action_btn = f'<a href="{link}" style="font-size:12px;">⛔ חסימה</a>'
         else:
-            link = url_for('toggle_status', phone=quote(phone), action='unblock')
+            link = url_for('toggle_status', phone=phone, action='unblock')  # CORRECT
             action_btn = f'<a href="{link}" style="font-size:12px;">✅ שחזור</a>'
-
         table_rows += f"""
            <tr style="border-bottom: 1px solid #eee;">
                <td style="padding:10px; text-align:right;">{escape(r[1])}</td>
