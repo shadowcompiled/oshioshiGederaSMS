@@ -852,5 +852,105 @@ try:
 except Exception as e:
     logger.error(f"Automatic DB Init failed on startup: {e}")
 
+
+@app.route('/api/cron/birthday_check', methods=['GET', 'POST'])
+@csrf.exempt
+def birthday_cron():
+    # 1. Security Check: Require a secret token to prevent abuse
+    # You must add CRON_SECRET to your .env file
+    cron_secret = os.environ.get("CRON_SECRET")
+    auth_header = request.headers.get('Authorization')
+
+    # Allow if triggered with correct Bearer token or if secret matches query param (for easier testing)
+    if not cron_secret:
+        return jsonify({"error": "CRON_SECRET not configured on server"}), 500
+
+    if auth_header != f"Bearer {cron_secret}" and request.args.get('secret') != cron_secret:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    # 2. Calculate current month
+    today = datetime.now()
+    current_month = today.month
+
+    logger.info(f"Starting birthday check for month: {current_month}")
+
+    conn, db_type = get_db()
+    try:
+        # 3. Fetch all active users
+        # We fetch all dates because SQL date parsing varies wildly between SQLite and Postgres
+        # It is safer to parse in Python for this specific case
+        q = "SELECT phone, name, date_of_birth FROM customers WHERE active=TRUE" if db_type == "postgres" else "SELECT phone, name, date_of_birth FROM customers WHERE active=1"
+
+        if db_type == "postgres":
+            cur = conn.cursor()
+            cur.execute(q)
+            rows = cur.fetchall()
+            cur.close()
+        else:
+            rows = conn.execute(q).fetchall()
+
+        birthdays_found = []
+
+        # 4. Filter users born in this month
+        for row in rows:
+            phone, name, dob_str = row
+            if not dob_str: continue
+
+            try:
+                # Handle various date formats (YYYY-MM-DD is standard)
+                dob_date = datetime.strptime(dob_str, '%Y-%m-%d')
+
+                if dob_date.month == current_month:
+                    birthdays_found.append((phone, name))
+            except ValueError:
+                continue
+
+        # 5. Send SMS to matching users
+        # We queue them via the existing QStash/API logic to handle rate limits
+        qstash_token = os.environ.get("QSTASH_TOKEN")
+        base_url = request.url_root.rstrip('/')
+        target_endpoint = f"{base_url}/api/send_sms_task"
+
+        sent_count = 0
+
+        if qstash_token:
+            headers = {
+                "Authorization": f"Bearer {qstash_token}",
+                "Content-Type": "application/json"
+            }
+
+            for phone, name in birthdays_found:
+                # Personalized Message
+                msg = f"היי {name}, חוגג/ת יום הולדת החודש? 🎂\nמזל טוב! מחכה לך הטבה מיוחדת ב-Sushi VIP. בואו לחגוג איתנו! 🍣"
+
+                try:
+                    requests.post(
+                        f"https://qstash.upstash.io/v2/publish/{target_endpoint}",
+                        headers=headers,
+                        json={
+                            "phone": phone,
+                            "message": msg,
+                            "secret": app.secret_key
+                        },
+                        timeout=5
+                    )
+                    sent_count += 1
+                except Exception as e:
+                    logger.error(f"Failed to queue birthday sms for {phone}: {e}")
+
+        return jsonify({
+            "status": "success",
+            "month": current_month,
+            "found": len(birthdays_found),
+            "queued": sent_count
+        })
+
+    except Exception as e:
+        logger.error(f"Birthday Cron Error: {e}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=False)
