@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
-import { verifyImportToken } from "@/lib/security";
+import { verifyImportToken, generateSecureToken } from "@/lib/security";
 import { formatPhone, isValidPhone } from "@/lib/validation";
 
 const SMS_LOGIN = process.env.ANDROID_SMS_GATEWAY_LOGIN;
@@ -35,8 +35,14 @@ export async function POST(req: NextRequest) {
     return redirectAdmin(req, "שגיאה: חסר הגדרת שער SMS.");
   }
 
+  const token = generateSecureToken(phone);
+  const clean = phone.replace("+", "");
+  const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.nextUrl.origin;
+  const unsubLink = `${baseUrl}/unsubscribe/${clean}?token=${token}`;
+  const finalMsg = `${message}\n\nלהסרה: ${unsubLink}`;
+
   const payload = {
-    textMessage: { text: message },
+    textMessage: { text: finalMsg },
     phoneNumbers: [phone],
     withDeliveryReport: true,
   };

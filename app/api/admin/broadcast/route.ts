@@ -43,26 +43,44 @@ export async function POST(req: NextRequest) {
   const secret = getAppSecret();
 
   if (!QSTASH_TOKEN) {
-    return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("שגיאה: חסר QSTASH_TOKEN"), req.url), 303);
+    return redirectAdmin(req, "שגיאה: חסר QSTASH_TOKEN. הגדר QSTASH_TOKEN ב-Vercel.");
   }
 
+  const qstashPublishUrl = `https://qstash.upstash.io/v2/publish/${targetEndpoint}`;
+
   let count = 0;
+  let lastError: string | null = null;
   for (const row of rows) {
-    const phone = String(row.phone ?? "");
+    const phone = String(row.phone ?? "").trim();
+    if (!phone) continue;
     try {
-      await fetch(`https://qstash.upstash.io/v2/publish/${targetEndpoint}`, {
+      const res = await fetch(qstashPublishUrl, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${QSTASH_TOKEN}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({ phone, message, secret }),
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(10000),
       });
-      count += 1;
+      if (res.ok) {
+        count += 1;
+      } else {
+        const text = await res.text();
+        lastError = `QStash ${res.status}: ${text.slice(0, 100)}`;
+        console.error("QStash publish failed", res.status, text, "for", phone);
+      }
     } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
       console.error("Failed to queue", phone, e);
     }
+  }
+
+  if (rows.length > 0 && count === 0) {
+    return redirectAdmin(
+      req,
+      "שליחה לתור נכשלה. בדוק ש-QSTASH_TOKEN תקין ב-Vercel ואת כתובת ה-API. " + (lastError ? lastError : "")
+    );
   }
 
   return NextResponse.redirect(

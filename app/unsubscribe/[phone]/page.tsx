@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { getDb, runDb } from "@/lib/db";
+import { getDb, runDb, initDb } from "@/lib/db";
 import { verifyToken } from "@/lib/security";
 import Logo from "@/app/Logo";
 
@@ -18,18 +18,28 @@ export default async function UnsubscribePage({
   if (!token) redirect("/");
 
   const clean = phoneParam.replace(/[^\d+]/g, "").slice(0, 20);
-  const candidatePhone = clean.startsWith("+") ? clean : "+" + clean;
+  const withPlus = clean.startsWith("+") ? clean : "+" + clean;
+  const digitsOnly = clean.replace("+", "");
 
-  if (!verifyToken(candidatePhone, token) && !verifyToken(clean, token)) {
+  if (!verifyToken(withPlus, token) && !verifyToken(digitsOnly, token)) {
     redirect("/");
   }
 
   try {
+    await initDb();
     const db = getDb();
     if (db.type === "postgres") {
-      await runDb(db, "UPDATE customers SET active = FALSE WHERE phone = $1", [candidatePhone]);
+      await runDb(
+        db,
+        "UPDATE customers SET active = FALSE WHERE phone = $1 OR REPLACE(phone, '+', '') = $2",
+        [withPlus, digitsOnly]
+      );
     } else {
-      await runDb(db, "UPDATE customers SET active = 0 WHERE phone = $1", [candidatePhone]);
+      await runDb(
+        db,
+        "UPDATE customers SET active = 0 WHERE phone = $1 OR REPLACE(phone, '+', '') = $2",
+        [withPlus, digitsOnly]
+      );
     }
     if (db.type === "sqlite") db.conn.close();
   } catch (e) {
