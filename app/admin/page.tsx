@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import nextDynamic from "next/dynamic";
 import Link from "next/link";
 import { getAdminSession } from "@/lib/auth";
 import { createImportToken } from "@/lib/security";
@@ -7,9 +8,17 @@ import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
 import ResetDbForm from "./ResetDbForm";
 import TestMessageForm from "./TestMessageForm";
-import AdminStats from "./AdminStats";
+
+const AdminStats = nextDynamic(() => import("./AdminStats"), { ssr: true, loading: () => <div style={{ minHeight: 220, display: "flex", alignItems: "center", justifyContent: "center", color: "#666" }}>טוען סטטיסטיקות...</div> });
 
 export const dynamic = "force-dynamic";
+
+function formatRegDate(created: string | null): string {
+  if (!created) return "-";
+  const d = new Date(created);
+  if (Number.isNaN(d.getTime())) return created.trim().split(" ")[0] || "-";
+  return d.toISOString().slice(0, 10);
+}
 
 export default async function AdminPage({
   searchParams,
@@ -42,35 +51,29 @@ export default async function AdminPage({
     redirect("/login?error=system");
   }
 
-  const activeCount = customers.filter((c) => c.active).length;
-  const newCount = customers.filter((c) => c.active && !c.received_message_at).length;
-  const params = await searchParams;
-  const msg = params.msg ?? "";
-
+  let activeCount = 0;
+  let newCount = 0;
   const byDate: Record<string, number> = {};
+  const byCity: Record<string, number> = {};
   for (const c of customers) {
+    if (c.active) {
+      activeCount++;
+      if (!c.received_message_at) newCount++;
+    }
     const d = c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : "";
     if (d) byDate[d] = (byDate[d] ?? 0) + 1;
+    const city = (c.city ?? "").trim() || "ללא עיר";
+    byCity[city] = (byCity[city] ?? 0) + 1;
   }
   const signupsByDate = Object.entries(byDate)
     .map(([date, count]) => ({ date, count }))
     .sort((a, b) => a.date.localeCompare(b.date));
-
-  const byCity: Record<string, number> = {};
-  for (const c of customers) {
-    const city = (c.city ?? "").trim() || "ללא עיר";
-    byCity[city] = (byCity[city] ?? 0) + 1;
-  }
   const cityCounts = Object.entries(byCity)
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
-  function formatRegDate(created: string | null): string {
-    if (!created) return "-";
-    const d = new Date(created);
-    if (Number.isNaN(d.getTime())) return created.trim().split(" ")[0] || "-";
-    return d.toISOString().slice(0, 10);
-  }
+  const params = await searchParams;
+  const msg = params.msg ?? "";
 
   return (
     <div className="container admin-container" style={{ maxWidth: "900px" }}>

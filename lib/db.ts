@@ -2,7 +2,7 @@ import { Pool } from "pg";
 
 const DB_NAME = "customers.db";
 
-export type DbConnection = 
+export type DbConnection =
   | { type: "postgres"; conn: Pool; client?: never }
   | { type: "sqlite"; conn: SqliteDb };
 
@@ -13,16 +13,24 @@ type SqliteDb = {
   close(): void;
 };
 
+const globalForDb = globalThis as unknown as { _pgPool: Pool | null | undefined; _initDone?: boolean };
+
 function getPostgresPool(): Pool | null {
-  let url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
-  if (!url) return null;
-  const sep = url.includes("?") ? "&" : "?";
-  if (url.includes("sslmode=")) {
-    url = url.replace(/sslmode=[^&]+/, "sslmode=verify-full");
-  } else {
-    url = `${url}${sep}sslmode=verify-full`;
+  if (globalForDb._pgPool !== undefined) return globalForDb._pgPool ?? null;
+  const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  if (!url) {
+    globalForDb._pgPool = null;
+    return null;
   }
-  return new Pool({ connectionString: url });
+  let connUrl = url;
+  const sep = connUrl.includes("?") ? "&" : "?";
+  if (connUrl.includes("sslmode=")) {
+    connUrl = connUrl.replace(/sslmode=[^&]+/, "sslmode=verify-full");
+  } else {
+    connUrl = `${connUrl}${sep}sslmode=verify-full`;
+  }
+  globalForDb._pgPool = new Pool({ connectionString: connUrl });
+  return globalForDb._pgPool;
 }
 
 function getSqliteDb(): SqliteDb | null {
@@ -93,8 +101,9 @@ export async function runDb(
   }
 }
 
-// Initialize schema
+// Run schema init once per process to avoid repeated ALTERs
 export async function initDb(): Promise<void> {
+  if (typeof globalForDb._initDone === "boolean" && globalForDb._initDone) return;
   const db = getDb();
   const schema = `
     CREATE TABLE IF NOT EXISTS customers (
@@ -129,6 +138,7 @@ export async function initDb(): Promise<void> {
     } catch {}
   }
   if (db.type === "sqlite") db.conn.close();
+  globalForDb._initDone = true;
 }
 
 export type CustomerRow = {
