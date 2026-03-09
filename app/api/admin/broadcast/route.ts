@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/auth";
+import { getAdminSession, attachSessionCookie } from "@/lib/auth";
 import { verifyImportToken } from "@/lib/security";
 import { initDb, getDb, queryCustomers } from "@/lib/db";
 import { getAppSecret } from "@/lib/security";
@@ -8,8 +8,17 @@ import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
 const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 
-function redirectAdmin(req: NextRequest, msg: string) {
-  return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent(msg), req.url), 303);
+function wantsJson(req: NextRequest): boolean {
+  return req.headers.get("accept")?.includes("application/json") ?? false;
+}
+
+async function respond(req: NextRequest, ok: boolean, msg: string, sessionOk: boolean) {
+  if (wantsJson(req)) {
+    return NextResponse.json({ ok, msg });
+  }
+  const res = NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent(msg), req.url), 303);
+  if (sessionOk) await attachSessionCookie(res);
+  return res;
 }
 
 export async function POST(req: NextRequest) {
@@ -19,15 +28,15 @@ export async function POST(req: NextRequest) {
     const tokenFromBody = (form.get("import_token") as string) ?? null;
     const tokenFromQuery = req.nextUrl.searchParams.get("import_token");
     const tokenOk = verifyImportToken(tokenFromBody ?? tokenFromQuery ?? null);
-    if (!sessionOk && !tokenOk) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
+    if (!sessionOk && !tokenOk) return respond(req, false, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.", false);
 
     const ip = await getClientIp();
     const { ok: rateOk } = checkRateLimit(ip, "broadcast", LIMITS.broadcast.max);
-    if (!rateOk) return redirectAdmin(req, "יותר מדי בקשות");
+    if (!rateOk) return respond(req, false, "יותר מדי בקשות", sessionOk);
 
     const message = (form.get("message") as string)?.trim() ?? "";
     if (!message || message.length > 1000) {
-      return redirectAdmin(req, "הודעה לא תקינה");
+      return respond(req, false, "הודעה לא תקינה", sessionOk);
     }
 
     await initDb();
@@ -44,10 +53,10 @@ export async function POST(req: NextRequest) {
     if (db.type === "sqlite") db.conn.close();
 
     if (onlyNew && rows.length === 0) {
-      return redirectAdmin(req, "אין לקוחות חדשים (שטרם קיבלו הודעה) לשליחה.");
+      return respond(req, false, "אין לקוחות חדשים (שטרם קיבלו הודעה) לשליחה.", sessionOk);
     }
     if (rows.length === 0) {
-      return redirectAdmin(req, "אין לקוחות פעילים לשליחה.");
+      return respond(req, false, "אין לקוחות פעילים לשליחה.", sessionOk);
     }
 
     const baseUrl = process.env.VERCEL_URL
@@ -57,65 +66,61 @@ export async function POST(req: NextRequest) {
     const secret = getAppSecret();
 
     if (!QSTASH_TOKEN) {
-      return redirectAdmin(req, "שגיאה: חסר QSTASH_TOKEN. הגדר QSTASH_TOKEN ב-Vercel.");
+      return respond(req, false, "שגיאה: חסר QSTASH_TOKEN. הגדר QSTASH_TOKEN ב-Vercel.", sessionOk);
     }
 
-    const batchUrl = "https://qstash.upstash.io/v2/batch";
-    const batchBody = rows
+    const phones = rows
       .map((row) => String(row.phone ?? "").trim())
-      .filter(Boolean)
-      .map((phone) => ({
-        destination: targetEndpoint,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone, message, secret }),
-      }));
-
-    if (batchBody.length === 0) {
-      return redirectAdmin(req, "אין מספרי טלפון תקינים לשליחה.");
+      .filter(Boolean);
+    if (phones.length === 0) {
+      return respond(req, false, "אין מספרי טלפון תקינים לשליחה.", sessionOk);
     }
 
+    const CHUNK = 8;
+    const authHeader = `Bearer ${QSTASH_TOKEN}`;
     let count = 0;
     let lastError: string | null = null;
-    try {
-      const res = await fetch(batchUrl, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${QSTASH_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(batchBody),
-        signal: AbortSignal.timeout(25000),
-      });
-      if (!res.ok) {
-        const text = await res.text();
-        lastError = `QStash ${res.status}: ${text.slice(0, 150)}`;
-        console.error("QStash batch failed", res.status, text);
-      } else {
-        const results = (await res.json()) as unknown[];
-        count = Array.isArray(results) ? results.filter((r) => r && typeof r === "object" && "messageId" in r).length : 0;
-        if (count < batchBody.length && Array.isArray(results)) {
-          lastError = `חלק מההודעות לא נשלחו (${count}/${batchBody.length})`;
-        }
-      }
-    } catch (e) {
-      lastError = e instanceof Error ? e.message : String(e);
-      console.error("Broadcast QStash error", e);
+    for (let i = 0; i < phones.length; i += CHUNK) {
+      const chunk = phones.slice(i, i + CHUNK);
+      const results = await Promise.all(
+        chunk.map(async (phone) => {
+          const qstashUrl = `https://qstash.upstash.io/v2/publish/${encodeURIComponent(targetEndpoint)}`;
+          try {
+            const res = await fetch(qstashUrl, {
+              method: "POST",
+              headers: {
+                Authorization: authHeader,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({ phone, message, secret }),
+              signal: AbortSignal.timeout(12000),
+            });
+            if (res.ok) return true;
+            const text = await res.text();
+            lastError = `QStash ${res.status}: ${text.slice(0, 120)}`;
+            return false;
+          } catch (e) {
+            lastError = e instanceof Error ? e.message : String(e);
+            return false;
+          }
+        })
+      );
+      count += results.filter(Boolean).length;
     }
 
     if (count === 0) {
-      return redirectAdmin(
+      return respond(
         req,
-        "שליחה לתור נכשלה. בדוק ש-QSTASH_TOKEN תקין ב-Vercel ואת כתובת ה-API. " + (lastError ?? "")
+        false,
+        "שליחה לתור נכשלה. בדוק ש-QSTASH_TOKEN תקין ב-Vercel ואת כתובת ה-API. " + (lastError ?? ""),
+        sessionOk
       );
     }
 
-    return NextResponse.redirect(
-      new URL("/admin?msg=" + encodeURIComponent(`ההודעות נשלחו לתור (נשלח ל-${count} לקוחות)`), req.url),
-      303
-    );
+    return respond(req, true, `ההודעות נשלחו לתור QStash (${count}/${phones.length} לקוחות).`, sessionOk);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("Broadcast error:", err);
-    return redirectAdmin(req, "שגיאה בשידור: " + msg);
+    return respond(req, false, "שגיאה בשידור: " + msg, false);
   }
 }

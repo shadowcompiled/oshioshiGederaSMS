@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getAdminSession } from "@/lib/auth";
+import { getAdminSession, attachSessionCookie } from "@/lib/auth";
 import { getDb, queryCustomers, mapRow } from "@/lib/db";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
@@ -37,10 +37,12 @@ export async function GET() {
   const blob = new Blob([csv], { type: "text/csv; charset=utf-8" });
   const filename = `customers_${new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)}.csv`;
 
-  return new NextResponse(blob, {
+  const res = new NextResponse(blob, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
       "Content-Disposition": `attachment; filename="${filename}"`,
     },
   });
+  await attachSessionCookie(res);
+  return res;
 }

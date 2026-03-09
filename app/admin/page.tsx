@@ -70,6 +70,8 @@ export default async function AdminPage({
             <Link
               href="/api/admin/export-csv"
               className="admin-btn admin-btn-green"
+              target="_blank"
+              rel="noopener noreferrer"
             >
               📊 ייצוא CSV
             </Link>

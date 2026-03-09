@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setAdminSession } from "@/lib/auth";
+import { attachSessionCookie } from "@/lib/auth";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
@@ -16,8 +16,9 @@ export async function POST(req: NextRequest) {
   const password = (form.get("password") as string) ?? "";
 
   if (password === ADMIN_PASSWORD) {
-    await setAdminSession();
-    return NextResponse.redirect(new URL("/admin", req.url), 303);
+    const res = NextResponse.redirect(new URL("/admin", req.url), 303);
+    await attachSessionCookie(res);
+    return res;
   }
 
   return NextResponse.redirect(new URL("/login?error=wrong", req.url), 303);
