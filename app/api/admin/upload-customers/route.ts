@@ -110,11 +110,11 @@ function rowToCustomer(row: Record<string, string>): { phone: string; name: stri
 function redirectAdmin(req: NextRequest, msg: string) {
   const url = new URL("/admin", req.url);
   url.searchParams.set("msg", msg);
-  return NextResponse.redirect(url);
+  return NextResponse.redirect(url, 303);
 }
 
 function redirectLogin(req: NextRequest) {
-  return NextResponse.redirect(new URL("/login", req.url));
+  return NextResponse.redirect(new URL("/login", req.url), 303);
 }
 
 export async function POST(req: NextRequest) {

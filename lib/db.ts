@@ -14,10 +14,15 @@ type SqliteDb = {
 };
 
 function getPostgresPool(): Pool | null {
-  const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
+  let url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) return null;
-  const connectionString = url.includes("sslmode=") ? url : `${url}${url.includes("?") ? "&" : "?"}sslmode=verify-full`;
-  return new Pool({ connectionString });
+  const sep = url.includes("?") ? "&" : "?";
+  if (url.includes("sslmode=")) {
+    url = url.replace(/sslmode=[^&]+/, "sslmode=verify-full");
+  } else {
+    url = `${url}${sep}sslmode=verify-full`;
+  }
+  return new Pool({ connectionString: url });
 }
 
 function getSqliteDb(): SqliteDb | null {

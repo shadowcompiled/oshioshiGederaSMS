@@ -13,12 +13,12 @@ export async function POST(req: NextRequest) {
 
   const ip = await getClientIp();
   const { ok: rateOk } = checkRateLimit(ip, "broadcast", LIMITS.broadcast.max);
-  if (!rateOk) return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("יותר מדי בקשות"), req.url));
+  if (!rateOk) return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("יותר מדי בקשות"), req.url), 303);
 
   const form = await req.formData();
   const message = (form.get("message") as string)?.trim() ?? "";
   if (!message || message.length > 1000) {
-    return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("הודעה לא תקינה"), req.url));
+    return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("הודעה לא תקינה"), req.url), 303);
   }
 
   const db = getDb();
@@ -37,7 +37,7 @@ export async function POST(req: NextRequest) {
   const secret = getAppSecret();
 
   if (!QSTASH_TOKEN) {
-    return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("שגיאה: חסר QSTASH_TOKEN"), req.url));
+    return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("שגיאה: חסר QSTASH_TOKEN"), req.url), 303);
   }
 
   let count = 0;
@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
   }
 
   return NextResponse.redirect(
-    new URL("/admin?msg=" + encodeURIComponent(`ההודעות נשלחו לתור (נשלח ל-${count} לקוחות)`), req.url)
+    new URL("/admin?msg=" + encodeURIComponent(`ההודעות נשלחו לתור (נשלח ל-${count} לקוחות)`), req.url),
+    303
   );
 }

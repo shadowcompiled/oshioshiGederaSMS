@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
   const ip = await getClientIp();
   const { ok } = checkRateLimit(ip, "login", LIMITS.login.max);
   if (!ok) {
-    return NextResponse.redirect(new URL("/login?error=rate", req.url));
+    return NextResponse.redirect(new URL("/login?error=rate", req.url), 303);
   }
 
   const form = await req.formData();
@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
 
   if (password === ADMIN_PASSWORD) {
     await setAdminSession();
-    return NextResponse.redirect(new URL("/admin", req.url));
+    return NextResponse.redirect(new URL("/admin", req.url), 303);
   }
 
-  return NextResponse.redirect(new URL("/login?error=wrong", req.url));
+  return NextResponse.redirect(new URL("/login?error=wrong", req.url), 303);
 }

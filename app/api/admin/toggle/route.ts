@@ -4,12 +4,12 @@ import { getDb, runDb } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   const ok = await getAdminSession();
-  if (!ok) return NextResponse.redirect(new URL("/login", req.url));
+  if (!ok) return NextResponse.redirect(new URL("/login", req.url), 303);
 
   const phone = (req.nextUrl.searchParams.get("phone") ?? "").trim();
   const action = (req.nextUrl.searchParams.get("action") ?? "").trim();
   if (!phone || !["block", "unblock"].includes(action)) {
-    return NextResponse.redirect(new URL("/admin", req.url));
+    return NextResponse.redirect(new URL("/admin", req.url), 303);
   }
 
   let formatted = phone.startsWith(" ") ? "+" + phone.trimStart() : phone;
@@ -31,5 +31,5 @@ export async function GET(req: NextRequest) {
   }
   if (db.type === "sqlite") db.conn.close();
 
-  return NextResponse.redirect(new URL("/admin", req.url));
+  return NextResponse.redirect(new URL("/admin", req.url), 303);
 }
