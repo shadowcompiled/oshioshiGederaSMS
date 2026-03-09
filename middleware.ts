@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Optional: add security headers in production (similar to Flask-Talisman)
+// Rewrite POST /login to /api/login so form action="/login" or stray POSTs don't hit the page (Server Action error)
 export function middleware(req: NextRequest) {
+  if (req.method === "POST" && req.nextUrl.pathname === "/login") {
+    const url = req.nextUrl.clone();
+    url.pathname = "/api/login";
+    return NextResponse.rewrite(url);
+  }
+
   const res = NextResponse.next();
   if (process.env.NODE_ENV === "production") {
     res.headers.set("X-Content-Type-Options", "nosniff");
