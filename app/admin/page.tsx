@@ -31,7 +31,9 @@ export default async function AdminPage({
 
   function formatRegDate(created: string | null): string {
     if (!created) return "-";
-    return created.split(" ")[0];
+    const d = new Date(created);
+    if (Number.isNaN(d.getTime())) return created.trim().split(" ")[0] || "-";
+    return d.toISOString().slice(0, 10);
   }
 
   return (
@@ -93,13 +95,17 @@ export default async function AdminPage({
                   </td>
                   <td style={{ padding: "10px", textAlign: "center" }}>
                     {c.active ? (
-                      <Link href={`/api/admin/toggle?phone=${encodeURIComponent(c.phone)}&action=block`} style={{ fontSize: "12px" }}>
-                        ⛔ חסימה
-                      </Link>
+                      <form action="/api/admin/toggle" method="GET" style={{ display: "inline" }}>
+                        <input type="hidden" name="phone" value={c.phone} />
+                        <input type="hidden" name="action" value="block" />
+                        <button type="submit" style={{ background: "none", border: "none", padding: 0, fontSize: "12px", color: "#1976d2", cursor: "pointer", textDecoration: "underline" }}>⛔ חסימה</button>
+                      </form>
                     ) : (
-                      <Link href={`/api/admin/toggle?phone=${encodeURIComponent(c.phone)}&action=unblock`} style={{ fontSize: "12px" }}>
-                        ✅ שחזור
-                      </Link>
+                      <form action="/api/admin/toggle" method="GET" style={{ display: "inline" }}>
+                        <input type="hidden" name="phone" value={c.phone} />
+                        <input type="hidden" name="action" value="unblock" />
+                        <button type="submit" style={{ background: "none", border: "none", padding: 0, fontSize: "12px", color: "#1976d2", cursor: "pointer", textDecoration: "underline" }}>✅ שחזור</button>
+                      </form>
                     )}
                   </td>
                 </tr>

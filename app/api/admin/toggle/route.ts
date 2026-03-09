@@ -4,7 +4,7 @@ import { getDb, runDb } from "@/lib/db";
 
 export async function GET(req: NextRequest) {
   const ok = await getAdminSession();
-  if (!ok) return NextResponse.redirect(new URL("/", req.url));
+  if (!ok) return NextResponse.redirect(new URL("/login", req.url));
 
   const phone = (req.nextUrl.searchParams.get("phone") ?? "").trim();
   const action = (req.nextUrl.searchParams.get("action") ?? "").trim();
