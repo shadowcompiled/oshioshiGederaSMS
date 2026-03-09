@@ -190,3 +190,218 @@ a:hover {
   letter-spacing: 4px;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
 }
+
+/* Responsive: mobile-first overrides */
+@media (max-width: 600px) {
+  body {
+    padding: 10px;
+    align-items: flex-start;
+    padding-top: max(10px, env(safe-area-inset-top));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+    padding-left: max(10px, env(safe-area-inset-left));
+    padding-right: max(10px, env(safe-area-inset-right));
+    background-attachment: scroll;
+  }
+
+  .container {
+    padding: 16px;
+    border-radius: 16px;
+    max-width: 100%;
+  }
+
+  h2 {
+    font-size: 20px;
+    margin-bottom: 12px;
+  }
+
+  .logo-area img,
+  .logo-area .logo-svg {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  .city-name {
+    font-size: 28px;
+    letter-spacing: 2px;
+  }
+
+  input,
+  textarea,
+  select {
+    padding: 14px;
+    font-size: 16px;
+    min-height: 48px;
+  }
+
+  button {
+    padding: 14px 16px;
+    min-height: 48px;
+    font-size: 16px;
+  }
+
+  .form-group {
+    margin-bottom: 12px;
+  }
+}
+
+/* Admin responsive */
+.admin-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 15px;
+}
+
+.admin-header .admin-title {
+  flex: 1 1 100%;
+  margin: 0;
+  order: 0;
+}
+
+.admin-header .admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+@media (min-width: 520px) {
+  .admin-header .admin-title {
+    flex: 1 1 auto;
+    order: 0;
+  }
+}
+
+.admin-card {
+  background: #fff;
+  padding: 20px;
+  border: 1px solid #eee;
+  border-radius: 8px;
+  margin-bottom: 20px;
+}
+
+@media (max-width: 600px) {
+  .admin-card {
+    padding: 14px;
+    margin-bottom: 16px;
+  }
+}
+
+.admin-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin: 0 -4px;
+}
+
+.admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+@media (max-width: 600px) {
+  .admin-table {
+    font-size: 12px;
+  }
+
+  .admin-table th,
+  .admin-table td {
+    padding: 8px 6px !important;
+  }
+}
+
+.admin-btn,
+.admin-btn-green,
+.admin-btn-logout {
+  display: inline-block;
+  padding: 10px 14px;
+  border-radius: 6px;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  min-height: 44px;
+  box-sizing: border-box;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.admin-btn-green {
+  background: #4CAF50;
+  color: white;
+}
+
+.admin-btn-logout {
+  background: #333;
+  color: white;
+}
+
+.admin-btn-reset {
+  min-height: 44px;
+}
+
+@media (max-width: 519px) {
+  .admin-actions {
+    width: 100%;
+  }
+
+  .admin-actions .admin-btn,
+  .admin-actions a.admin-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+}
+
+.admin-table-btn {
+  background: none;
+  border: none;
+  padding: 6px 4px;
+  min-height: 0;
+  width: auto;
+  font-size: 12px;
+  color: #1976d2;
+  cursor: pointer;
+  text-decoration: underline;
+  margin: 0;
+}
+
+.stats-chart-container {
+  height: 280px;
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .stats-chart-container {
+    height: 220px;
+  }
+
+  .stats-card {
+    padding: 14px !important;
+  }
+
+  .stats-section .stats-section-title {
+    font-size: 1.1rem !important;
+  }
+}
+
+.admin-upload-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 480px) {
+  .admin-upload-form input[type="file"] {
+    max-width: 100% !important;
+  }
+
+  .admin-upload-form button {
+    width: 100%;
+  }
+
+  .admin-test-form {
+    max-width: 100% !important;
+  }
+}

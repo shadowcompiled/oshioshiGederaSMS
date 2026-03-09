@@ -61,26 +61,25 @@ export default async function AdminPage({
   }
 
   return (
-    <div className="container" style={{ maxWidth: "900px" }}>
+    <div className="container admin-container" style={{ maxWidth: "900px" }}>
       <div style={{ direction: "rtl", textAlign: "right" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "15px", flexWrap: "wrap", gap: "10px" }}>
-          <h2 style={{ margin: 0, flex: 1 }}>ניהול לקוחות 🍣</h2>
-          <Link
-            href="/api/admin/export-csv"
-            style={{ background: "#4CAF50", color: "white", padding: "8px 12px", borderRadius: "4px", textDecoration: "none", fontSize: "14px", fontWeight: 600 }}
-          >
-            📊 ייצוא CSV
-          </Link>
-          <ResetDbForm />
-          <Link
-            href="/api/logout"
-            style={{ background: "#333", color: "white", padding: "8px 12px", borderRadius: "4px", textDecoration: "none", fontSize: "14px" }}
-          >
-            יציאה
-          </Link>
+        <div className="admin-header">
+          <h2 className="admin-title">ניהול לקוחות 🍣</h2>
+          <div className="admin-actions">
+            <Link
+              href="/api/admin/export-csv"
+              className="admin-btn admin-btn-green"
+            >
+              📊 ייצוא CSV
+            </Link>
+            <ResetDbForm importToken={importToken} />
+            <Link href="/api/logout" className="admin-btn admin-btn-logout">
+              יציאה
+            </Link>
+          </div>
         </div>
 
-        <div style={{ background: "#fff", padding: "20px", border: "1px solid #eee", borderRadius: "8px", marginBottom: "20px" }}>
+        <div className="admin-card">
           <h3 style={{ marginTop: 0 }}>📢 שליחת הודעה ({activeCount} פעילים)</h3>
           <BroadcastForm />
           {msg && <p style={{ color: "blue", fontWeight: "bold", marginTop: "10px" }}>{msg}</p>}
@@ -93,8 +92,8 @@ export default async function AdminPage({
         <h3 style={{ borderBottom: "2px solid #d32f2f", paddingBottom: "5px", display: "inline-block", marginBottom: "15px" }}>
           רשימת לקוחות ({customers.length})
         </h3>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+        <div className="admin-table-wrap">
+          <table className="admin-table">
             <thead style={{ background: "#f5f5f5", position: "sticky", top: 0 }}>
               <tr style={{ borderBottom: "2px solid #d32f2f" }}>
                 <th style={{ padding: "10px", textAlign: "right" }}>שם</th>
@@ -127,14 +126,14 @@ export default async function AdminPage({
                         <input type="hidden" name="import_token" value={importToken} />
                         <input type="hidden" name="phone" value={c.phone} />
                         <input type="hidden" name="action" value="block" />
-                        <button type="submit" style={{ background: "none", border: "none", padding: 0, fontSize: "12px", color: "#1976d2", cursor: "pointer", textDecoration: "underline" }}>⛔ חסימה</button>
+                        <button type="submit" className="admin-table-btn">⛔ חסימה</button>
                       </form>
                     ) : (
                       <form action="/api/admin/toggle" method="POST" style={{ display: "inline" }}>
                         <input type="hidden" name="import_token" value={importToken} />
                         <input type="hidden" name="phone" value={c.phone} />
                         <input type="hidden" name="action" value="unblock" />
-                        <button type="submit" style={{ background: "none", border: "none", padding: 0, fontSize: "12px", color: "#1976d2", cursor: "pointer", textDecoration: "underline" }}>✅ שחזור</button>
+                        <button type="submit" className="admin-table-btn">✅ שחזור</button>
                       </form>
                     )}
                   </td>

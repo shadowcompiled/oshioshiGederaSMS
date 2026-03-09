@@ -7,6 +7,7 @@ export default function UploadForm({ importToken }: Props) {
     <div style={{ marginTop: "16px" }}>
       <h4 style={{ marginBottom: "8px" }}>📁 ייבוא מלקובץ CSV / Excel</h4>
       <form
+        className="admin-upload-form"
         action="/api/admin/import"
         method="POST"
         encType="multipart/form-data"

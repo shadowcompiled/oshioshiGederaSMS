@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
+import { verifyImportToken } from "@/lib/security";
 import { getDb, runDb, initDb } from "@/lib/db";
 
 function redirectAdmin(req: NextRequest, msg: string) {
@@ -9,8 +10,10 @@ function redirectAdmin(req: NextRequest, msg: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const ok = await getAdminSession();
-  if (!ok) {
+  const formData = await req.formData().catch(() => new FormData());
+  const sessionOk = await getAdminSession();
+  const tokenOk = verifyImportToken((formData.get("import_token") as string) ?? null);
+  if (!sessionOk && !tokenOk) {
     return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
   }
 

@@ -3,9 +3,10 @@
 export default function TestMessageForm() {
   return (
     <form
+      className="admin-test-form"
       action="/api/admin/send-test"
       method="POST"
-      style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "400px", marginTop: "12px" }}
+      style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "400px", marginTop: "12px", width: "100%" }}
     >
       <h4 style={{ margin: "0 0 4px 0" }}>📱 שליחת הודעת בדיקה</h4>
       <label style={{ fontSize: "13px" }}>
