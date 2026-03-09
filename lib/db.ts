@@ -16,7 +16,7 @@ type SqliteDb = {
 function getPostgresPool(): Pool | null {
   const url = process.env.POSTGRES_URL || process.env.DATABASE_URL;
   if (!url) return null;
-  const connectionString = url.includes("sslmode=") ? url : `${url}?sslmode=require`;
+  const connectionString = url.includes("sslmode=") ? url : `${url}${url.includes("?") ? "&" : "?"}sslmode=verify-full`;
   return new Pool({ connectionString });
 }
 

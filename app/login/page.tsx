@@ -1,5 +1,9 @@
 import Link from "next/link";
 import Logo from "../Logo";
+import LoginForm from "./LoginForm";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export default async function LoginPage({
   searchParams,
@@ -19,18 +23,7 @@ export default async function LoginPage({
       <h2>כניסת מנהל</h2>
       {isWrong && <p className="error">סיסמה שגויה</p>}
       {isRate && <p className="error">יותר מדי ניסיונות. נסה שוב מאוחר יותר.</p>}
-      <form action="/api/login" method="POST">
-        <div className="form-group">
-          <input
-            type="password"
-            name="password"
-            placeholder="סיסמה"
-            required
-            autoComplete="current-password"
-          />
-        </div>
-        <button type="submit">כניסה</button>
-      </form>
+      <LoginForm />
       <Link href="/" className="small-text">
         חזור לדף הבית
       </Link>
