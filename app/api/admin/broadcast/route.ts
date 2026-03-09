@@ -6,8 +6,28 @@ import { getAppSecret } from "@/lib/security";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
-const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
-const QSTASH_BASE = (process.env.QSTASH_URL || "https://qstash.upstash.io").replace(/\/$/, "");
+/** QStash publish base: same as Python (https://qstash.upstash.io) or QSTASH_URL origin for EU. */
+function getQstashPublishBase(): string {
+  const raw = process.env.QSTASH_URL;
+  if (!raw || !String(raw).trim()) return "https://qstash.upstash.io";
+  try {
+    const u = new URL(raw.startsWith("http") ? raw : `https://${raw}`);
+    return u.origin;
+  } catch {
+    return "https://qstash.upstash.io";
+  }
+}
+const QSTASH_PUBLISH_BASE = getQstashPublishBase();
+
+function normalizeBaseUrl(raw: string | undefined): string {
+  if (!raw || typeof raw !== "string") return "";
+  const trimmed = raw.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  if (/undefined/i.test(trimmed)) return "";
+  if (trimmed.startsWith("https://")) return trimmed;
+  if (trimmed.startsWith("http://")) return trimmed;
+  return `https://${trimmed}`;
+}
 
 function wantsJson(req: NextRequest): boolean {
   return req.headers.get("accept")?.includes("application/json") ?? false;
@@ -60,20 +80,19 @@ export async function POST(req: NextRequest) {
       return respond(req, false, "אין לקוחות פעילים לשליחה.", sessionOk);
     }
 
-    let baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : (req.nextUrl.origin || "").replace(/\/$/, "");
-    if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
-      baseUrl = baseUrl ? `https://${baseUrl}` : process.env.VERCEL_PROJECT_PRODUCTION_URL
-        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
-        : "";
-    }
-    const targetEndpoint = baseUrl ? `${baseUrl}/api/send_sms_task` : "";
-    if (!targetEndpoint || !targetEndpoint.startsWith("https://")) {
+    // Match Python: base from request first (request.url_root.rstrip('/')), then env fallbacks
+    const requestOrigin = req.url ? new URL(req.url).origin : req.nextUrl?.origin ?? "";
+    const baseUrl =
+      normalizeBaseUrl(requestOrigin) ||
+      normalizeBaseUrl(process.env.VERCEL_URL) ||
+      normalizeBaseUrl(process.env.APP_URL) ||
+      normalizeBaseUrl(process.env.VERCEL_PROJECT_PRODUCTION_URL);
+    const targetEndpoint = baseUrl ? `${baseUrl.replace(/\/+$/, "")}/api/send_sms_task` : "";
+    if (!targetEndpoint.startsWith("https://") || /undefined/i.test(targetEndpoint)) {
       return respond(
         req,
         false,
-        "שגיאה: לא ניתן לקבוע כתובת API (הגדר VERCEL_URL או VERCEL_PROJECT_PRODUCTION_URL ב-Vercel).",
+        "שגיאה: לא ניתן לקבוע כתובת API. הגדר ב-Vercel: VERCEL_URL או APP_URL (למשל https://your-app.vercel.app).",
         sessionOk
       );
     }
@@ -90,15 +109,17 @@ export async function POST(req: NextRequest) {
       return respond(req, false, "אין מספרי טלפון תקינים לשליחה.", sessionOk);
     }
 
-    const CHUNK = 8;
+    // Match Python: single URL string, raw POST (requests.post(url, headers=..., json=...))
+    const qstashUrl = `${QSTASH_PUBLISH_BASE}/v2/publish/${targetEndpoint}`;
     const authHeader = `Bearer ${QSTASH_TOKEN}`;
+
+    const CHUNK = 8;
     let count = 0;
     let lastError: string | null = null;
     for (let i = 0; i < phones.length; i += CHUNK) {
       const chunk = phones.slice(i, i + CHUNK);
       const results = await Promise.all(
         chunk.map(async (phone) => {
-          const qstashUrl = `${QSTASH_BASE}/v2/publish/${encodeURIComponent(targetEndpoint)}`;
           try {
             const res = await fetch(qstashUrl, {
               method: "POST",
