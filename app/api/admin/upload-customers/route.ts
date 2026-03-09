@@ -107,31 +107,41 @@ function rowToCustomer(row: Record<string, string>): { phone: string; name: stri
   };
 }
 
+function redirectAdmin(req: NextRequest, msg: string) {
+  const url = new URL("/admin", req.url);
+  url.searchParams.set("msg", msg);
+  return NextResponse.redirect(url);
+}
+
+function redirectLogin(req: NextRequest) {
+  return NextResponse.redirect(new URL("/login", req.url));
+}
+
 export async function POST(req: NextRequest) {
   const ok = await getAdminSession();
-  if (!ok) return NextResponse.json({ error: "לא מאומת. נא להתחבר מחדש." }, { status: 403 });
+  if (!ok) return redirectLogin(req);
 
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     if (!file || !file.size) {
-      return NextResponse.json({ error: "לא נבחר קובץ", added: 0, updated: 0, skipped: 0 }, { status: 400 });
+      return redirectAdmin(req, "לא נבחר קובץ.");
     }
     if (file.size > MAX_FILE_SIZE) {
-      return NextResponse.json({ error: "הקובץ גדול מדי (עד 5MB)", added: 0, updated: 0, skipped: 0 }, { status: 400 });
+      return redirectAdmin(req, "הקובץ גדול מדי (עד 5MB).");
     }
     const type = file.type.toLowerCase();
     const name = (file.name || "").toLowerCase();
     const isCsv = type === "text/csv" || name.endsWith(".csv");
     const isXlsx = type.includes("spreadsheet") || type.includes("excel") || name.endsWith(".xlsx") || name.endsWith(".xls");
     if (!isCsv && !isXlsx) {
-      return NextResponse.json({ error: "סוג קובץ לא נתמך. העלה CSV או Excel (.xlsx)", added: 0, updated: 0, skipped: 0 }, { status: 400 });
+      return redirectAdmin(req, "סוג קובץ לא נתמך. העלה CSV או Excel (.xlsx).");
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
     const rows = isCsv ? parseCSV(buffer) : parseXLSX(buffer);
     if (rows.length === 0) {
-      return NextResponse.json({ error: "לא נמצאו שורות בקובץ או שהעמודות לא מזוהות", added: 0, updated: 0, skipped: 0 }, { status: 400 });
+      return redirectAdmin(req, "לא נמצאו שורות בקובץ או שהעמודות לא מזוהות.");
     }
 
     await initDb();
@@ -164,19 +174,9 @@ export async function POST(req: NextRequest) {
     }
     if (db.type === "sqlite") db.conn.close();
 
-    return NextResponse.json({
-      success: true,
-      added,
-      updated,
-      skipped,
-      total: rows.length,
-      message: `נוספו ${added}, עודכנו ${updated}, דולגו ${skipped} שורות.`,
-    });
+    return redirectAdmin(req, `ייבוא הושלם: נוספו ${added}, עודכנו ${updated}, דולגו ${skipped} שורות.`);
   } catch (e) {
     console.error("Upload error:", e);
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "שגיאה בייבוא", added: 0, updated: 0, skipped: 0 },
-      { status: 500 }
-    );
+    return redirectAdmin(req, e instanceof Error ? e.message : "שגיאה בייבוא.");
   }
 }
