@@ -25,13 +25,14 @@ export default async function AdminPage({
   const db = getDb();
   const rows = await queryCustomers(
     db,
-    "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at FROM customers ORDER BY active DESC, name ASC",
+    "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at, received_message_at FROM customers ORDER BY active DESC, name ASC",
     []
   );
   if (db.type === "sqlite") db.conn.close();
 
   const customers = rows.map(mapRow);
   const activeCount = customers.filter((c) => c.active).length;
+  const newCount = customers.filter((c) => c.active && !c.received_message_at).length;
   const params = await searchParams;
   const msg = params.msg ?? "";
 
@@ -81,7 +82,7 @@ export default async function AdminPage({
 
         <div className="admin-card">
           <h3 style={{ marginTop: 0 }}>📢 שליחת הודעה ({activeCount} פעילים)</h3>
-          <BroadcastForm importToken={importToken} />
+          <BroadcastForm importToken={importToken} activeCount={activeCount} newCount={newCount} />
           {msg && <p style={{ color: "blue", fontWeight: "bold", marginTop: "10px" }}>{msg}</p>}
           <UploadForm importToken={importToken} />
           <TestMessageForm importToken={importToken} />
@@ -104,6 +105,7 @@ export default async function AdminPage({
                 <th style={{ padding: "10px", textAlign: "right" }}>עיר</th>
                 <th style={{ padding: "10px", textAlign: "center" }}>תאריך רישום</th>
                 <th style={{ padding: "10px", textAlign: "center" }}>סטטוס</th>
+                <th style={{ padding: "10px", textAlign: "center" }}>חדש</th>
                 <th style={{ padding: "10px", textAlign: "center" }}></th>
               </tr>
             </thead>
@@ -119,6 +121,13 @@ export default async function AdminPage({
                   <td style={{ padding: "10px", textAlign: "center", fontSize: "12px" }}>{formatRegDate(c.created_at)}</td>
                   <td style={{ padding: "10px", textAlign: "center" }}>
                     {c.active ? <span className="success">פעיל</span> : <span className="error">הוסר</span>}
+                  </td>
+                  <td style={{ padding: "10px", textAlign: "center" }}>
+                    {!c.received_message_at ? (
+                      <span style={{ background: "#e3f2fd", color: "#1565c0", padding: "2px 8px", borderRadius: "4px", fontSize: "12px", fontWeight: 600 }}>חדש</span>
+                    ) : (
+                      <span style={{ color: "#999", fontSize: "12px" }}>—</span>
+                    )}
                   </td>
                   <td style={{ padding: "10px", textAlign: "center" }}>
                     {c.active ? (

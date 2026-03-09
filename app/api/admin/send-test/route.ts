@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { verifyImportToken, generateSecureToken } from "@/lib/security";
 import { formatPhone, isValidPhone } from "@/lib/validation";
+import { initDb, getDb, runDb } from "@/lib/db";
 
 const SMS_LOGIN = process.env.ANDROID_SMS_GATEWAY_LOGIN;
 const SMS_PASS = process.env.ANDROID_SMS_GATEWAY_PASSWORD;
@@ -63,6 +64,15 @@ export async function POST(req: NextRequest) {
       const text = await res.text();
       console.error("SMS Gateway Error (test)", res.status, text);
       return redirectAdmin(req, "שליחת הודעת הבדיקה נכשלה: " + (text || res.status));
+    }
+    try {
+      await initDb();
+      const db = getDb();
+      const now = new Date().toISOString();
+      await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
+      if (db.type === "sqlite") db.conn.close();
+    } catch (e) {
+      console.error("Failed to set received_message_at (test)", phone, e);
     }
     return redirectAdmin(req, `הודעת בדיקה נשלחה ל־${phone}.`);
   } catch (e) {

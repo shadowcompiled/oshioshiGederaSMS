@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAppSecret, generateSecureToken } from "@/lib/security";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
+import { initDb, getDb, runDb } from "@/lib/db";
 
 const SMS_LOGIN = process.env.ANDROID_SMS_GATEWAY_LOGIN;
 const SMS_PASS = process.env.ANDROID_SMS_GATEWAY_PASSWORD;
@@ -59,6 +60,15 @@ export async function POST(req: NextRequest) {
       const text = await res.text();
       console.error("SMS Gateway Error", res.status, text);
       return NextResponse.json({ status: "error", error: text }, { status: 500 });
+    }
+    try {
+      await initDb();
+      const db = getDb();
+      const now = new Date().toISOString();
+      await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
+      if (db.type === "sqlite") db.conn.close();
+    } catch (e) {
+      console.error("Failed to set received_message_at", phone, e);
     }
     const json = await res.json();
     return NextResponse.json({ status: "sent", phone, gateway_response: json });
