@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
+import { verifyImportToken } from "@/lib/security";
 import { processImportFile, MAX_FILE_SIZE } from "@/lib/import-customers";
 
 function redirectAdmin(req: NextRequest, msg: string) {
@@ -13,11 +14,12 @@ function redirectLogin(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const ok = await getAdminSession();
-  if (!ok) return redirectLogin(req);
+  const formData = await req.formData();
+  const sessionOk = await getAdminSession();
+  const tokenOk = verifyImportToken((formData.get("import_token") as string) ?? null);
+  if (!sessionOk && !tokenOk) return redirectLogin(req);
 
   try {
-    const formData = await req.formData();
     const file = formData.get("file") as File | null;
     if (!file || !file.size) {
       return redirectAdmin(req, "לא נבחר קובץ.");

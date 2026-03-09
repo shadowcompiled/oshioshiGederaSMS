@@ -1,19 +1,18 @@
 "use client";
 
-import type { importCustomersAction } from "./actions";
+type Props = { importToken: string };
 
-type Props = { importAction: typeof importCustomersAction };
-
-export default function UploadForm({ importAction }: Props) {
+export default function UploadForm({ importToken }: Props) {
   return (
     <div style={{ marginTop: "16px" }}>
       <h4 style={{ marginBottom: "8px" }}>📁 ייבוא מלקובץ CSV / Excel</h4>
       <form
-        action={importAction}
+        action="/api/admin/import"
         method="POST"
         encType="multipart/form-data"
         style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "10px" }}
       >
+        <input type="hidden" name="import_token" value={importToken} />
         <input
           type="file"
           name="file"

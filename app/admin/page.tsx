@@ -1,10 +1,10 @@
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getAdminSession } from "@/lib/auth";
+import { createImportToken } from "@/lib/security";
 import { getDb, queryCustomers, mapRow, initDb } from "@/lib/db";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
-import { importCustomersAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +15,8 @@ export default async function AdminPage({
 }) {
   const ok = await getAdminSession();
   if (!ok) redirect("/login");
+
+  const importToken = createImportToken();
 
   await initDb();
   const db = getDb();
@@ -60,7 +62,7 @@ export default async function AdminPage({
           <h3 style={{ marginTop: 0 }}>📢 שליחת הודעה ({activeCount} פעילים)</h3>
           <BroadcastForm />
           {msg && <p style={{ color: "blue", fontWeight: "bold", marginTop: "10px" }}>{msg}</p>}
-          <UploadForm importAction={importCustomersAction} />
+          <UploadForm importToken={importToken} />
         </div>
 
         <h3 style={{ borderBottom: "2px solid #d32f2f", paddingBottom: "5px", display: "inline-block", marginBottom: "15px" }}>
