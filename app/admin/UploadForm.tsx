@@ -22,10 +22,12 @@ export default function UploadForm() {
       const res = await fetch("/api/admin/upload-customers", {
         method: "POST",
         body: formData,
+        credentials: "include",
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setResult({ ok: false, message: data.error || "שגיאה בייבוא" });
+        const msg = res.status === 403 ? "ההתחברות פגה. נא להתחבר שוב מדף /login ולנסות." : (data.error || "שגיאה בייבוא");
+        setResult({ ok: false, message: msg });
         return;
       }
       setResult({

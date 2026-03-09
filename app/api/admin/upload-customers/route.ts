@@ -109,7 +109,7 @@ function rowToCustomer(row: Record<string, string>): { phone: string; name: stri
 
 export async function POST(req: NextRequest) {
   const ok = await getAdminSession();
-  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!ok) return NextResponse.json({ error: "לא מאומת. נא להתחבר מחדש." }, { status: 403 });
 
   try {
     const formData = await req.formData();
