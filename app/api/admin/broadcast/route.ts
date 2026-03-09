@@ -7,6 +7,7 @@ import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
 const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
+const QSTASH_BASE = (process.env.QSTASH_URL || "https://qstash.upstash.io").replace(/\/$/, "");
 
 function wantsJson(req: NextRequest): boolean {
   return req.headers.get("accept")?.includes("application/json") ?? false;
@@ -59,10 +60,23 @@ export async function POST(req: NextRequest) {
       return respond(req, false, "אין לקוחות פעילים לשליחה.", sessionOk);
     }
 
-    const baseUrl = process.env.VERCEL_URL
+    let baseUrl = process.env.VERCEL_URL
       ? `https://${process.env.VERCEL_URL}`
       : (req.nextUrl.origin || "").replace(/\/$/, "");
-    const targetEndpoint = `${baseUrl}/api/send_sms_task`;
+    if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+      baseUrl = baseUrl ? `https://${baseUrl}` : process.env.VERCEL_PROJECT_PRODUCTION_URL
+        ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`
+        : "";
+    }
+    const targetEndpoint = baseUrl ? `${baseUrl}/api/send_sms_task` : "";
+    if (!targetEndpoint || !targetEndpoint.startsWith("https://")) {
+      return respond(
+        req,
+        false,
+        "שגיאה: לא ניתן לקבוע כתובת API (הגדר VERCEL_URL או VERCEL_PROJECT_PRODUCTION_URL ב-Vercel).",
+        sessionOk
+      );
+    }
     const secret = getAppSecret();
 
     if (!QSTASH_TOKEN) {
@@ -84,7 +98,7 @@ export async function POST(req: NextRequest) {
       const chunk = phones.slice(i, i + CHUNK);
       const results = await Promise.all(
         chunk.map(async (phone) => {
-          const qstashUrl = `https://qstash.upstash.io/v2/publish/${encodeURIComponent(targetEndpoint)}`;
+          const qstashUrl = `${QSTASH_BASE}/v2/publish/${encodeURIComponent(targetEndpoint)}`;
           try {
             const res = await fetch(qstashUrl, {
               method: "POST",
