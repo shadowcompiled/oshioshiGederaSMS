@@ -18,6 +18,7 @@ function getQstashPublishBase(): string {
   }
 }
 const QSTASH_PUBLISH_BASE = getQstashPublishBase();
+const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 
 function normalizeBaseUrl(raw: string | undefined): string {
   if (!raw || typeof raw !== "string") return "";
