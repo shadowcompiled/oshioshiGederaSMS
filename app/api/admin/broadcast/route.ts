@@ -7,9 +7,13 @@ import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
 const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 
+function redirectAdmin(req: NextRequest, msg: string) {
+  return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent(msg), req.url), 303);
+}
+
 export async function POST(req: NextRequest) {
   const ok = await getAdminSession();
-  if (!ok) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  if (!ok) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
 
   const ip = await getClientIp();
   const { ok: rateOk } = checkRateLimit(ip, "broadcast", LIMITS.broadcast.max);

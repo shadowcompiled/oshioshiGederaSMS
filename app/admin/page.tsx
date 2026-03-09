@@ -5,6 +5,9 @@ import { createImportToken } from "@/lib/security";
 import { getDb, queryCustomers, mapRow, initDb } from "@/lib/db";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
+import ResetDbForm from "./ResetDbForm";
+import TestMessageForm from "./TestMessageForm";
+import AdminStats from "./AdminStats";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +35,24 @@ export default async function AdminPage({
   const params = await searchParams;
   const msg = params.msg ?? "";
 
+  const byDate: Record<string, number> = {};
+  for (const c of customers) {
+    const d = c.created_at ? new Date(c.created_at).toISOString().slice(0, 10) : "";
+    if (d) byDate[d] = (byDate[d] ?? 0) + 1;
+  }
+  const signupsByDate = Object.entries(byDate)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const byCity: Record<string, number> = {};
+  for (const c of customers) {
+    const city = (c.city ?? "").trim() || "ללא עיר";
+    byCity[city] = (byCity[city] ?? 0) + 1;
+  }
+  const cityCounts = Object.entries(byCity)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
   function formatRegDate(created: string | null): string {
     if (!created) return "-";
     const d = new Date(created);
@@ -50,6 +71,7 @@ export default async function AdminPage({
           >
             📊 ייצוא CSV
           </Link>
+          <ResetDbForm />
           <Link
             href="/api/logout"
             style={{ background: "#333", color: "white", padding: "8px 12px", borderRadius: "4px", textDecoration: "none", fontSize: "14px" }}
@@ -63,7 +85,10 @@ export default async function AdminPage({
           <BroadcastForm />
           {msg && <p style={{ color: "blue", fontWeight: "bold", marginTop: "10px" }}>{msg}</p>}
           <UploadForm importToken={importToken} />
+          <TestMessageForm />
         </div>
+
+        <AdminStats signupsByDate={signupsByDate} cityCounts={cityCounts} />
 
         <h3 style={{ borderBottom: "2px solid #d32f2f", paddingBottom: "5px", display: "inline-block", marginBottom: "15px" }}>
           רשימת לקוחות ({customers.length})
@@ -98,13 +123,15 @@ export default async function AdminPage({
                   </td>
                   <td style={{ padding: "10px", textAlign: "center" }}>
                     {c.active ? (
-                      <form action="/api/admin/toggle" method="GET" style={{ display: "inline" }}>
+                      <form action="/api/admin/toggle" method="POST" style={{ display: "inline" }}>
+                        <input type="hidden" name="import_token" value={importToken} />
                         <input type="hidden" name="phone" value={c.phone} />
                         <input type="hidden" name="action" value="block" />
                         <button type="submit" style={{ background: "none", border: "none", padding: 0, fontSize: "12px", color: "#1976d2", cursor: "pointer", textDecoration: "underline" }}>⛔ חסימה</button>
                       </form>
                     ) : (
-                      <form action="/api/admin/toggle" method="GET" style={{ display: "inline" }}>
+                      <form action="/api/admin/toggle" method="POST" style={{ display: "inline" }}>
+                        <input type="hidden" name="import_token" value={importToken} />
                         <input type="hidden" name="phone" value={c.phone} />
                         <input type="hidden" name="action" value="unblock" />
                         <button type="submit" style={{ background: "none", border: "none", padding: 0, fontSize: "12px", color: "#1976d2", cursor: "pointer", textDecoration: "underline" }}>✅ שחזור</button>

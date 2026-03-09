@@ -1,15 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
+import { verifyImportToken } from "@/lib/security";
 import { getDb, runDb } from "@/lib/db";
 
-export async function GET(req: NextRequest) {
-  const ok = await getAdminSession();
-  if (!ok) return NextResponse.redirect(new URL("/login", req.url), 303);
+function redirectAdmin(req: NextRequest, msg?: string) {
+  const url = new URL("/admin", req.url);
+  if (msg) url.searchParams.set("msg", msg);
+  return NextResponse.redirect(url, 303);
+}
 
-  const phone = (req.nextUrl.searchParams.get("phone") ?? "").trim();
-  const action = (req.nextUrl.searchParams.get("action") ?? "").trim();
+export async function POST(req: NextRequest) {
+  const formData = await req.formData();
+  const sessionOk = await getAdminSession();
+  const tokenOk = verifyImportToken((formData.get("import_token") as string) ?? null);
+  if (!sessionOk && !tokenOk) {
+    return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
+  }
+
+  const phone = ((formData.get("phone") as string) ?? "").trim();
+  const action = ((formData.get("action") as string) ?? "").trim();
   if (!phone || !["block", "unblock"].includes(action)) {
-    return NextResponse.redirect(new URL("/admin", req.url), 303);
+    return redirectAdmin(req);
   }
 
   let formatted = phone.startsWith(" ") ? "+" + phone.trimStart() : phone;
@@ -31,5 +42,5 @@ export async function GET(req: NextRequest) {
   }
   if (db.type === "sqlite") db.conn.close();
 
-  return NextResponse.redirect(new URL("/admin", req.url), 303);
+  return redirectAdmin(req);
 }

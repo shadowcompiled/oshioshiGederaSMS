@@ -9,15 +9,13 @@ function redirectAdmin(req: NextRequest, msg: string) {
   return NextResponse.redirect(url, 303);
 }
 
-function redirectLogin(req: NextRequest) {
-  return NextResponse.redirect(new URL("/login", req.url), 303);
-}
-
 export async function POST(req: NextRequest) {
   const formData = await req.formData();
   const sessionOk = await getAdminSession();
   const tokenOk = verifyImportToken((formData.get("import_token") as string) ?? null);
-  if (!sessionOk && !tokenOk) return redirectLogin(req);
+  if (!sessionOk && !tokenOk) {
+    return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
+  }
 
   try {
     const file = formData.get("file") as File | null;
