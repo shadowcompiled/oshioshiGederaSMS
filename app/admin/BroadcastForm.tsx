@@ -3,9 +3,10 @@
 type Props = { importToken: string };
 
 export default function BroadcastForm({ importToken }: Props) {
+  const action = `/api/admin/broadcast?import_token=${encodeURIComponent(importToken)}`;
   return (
     <form
-      action="/api/admin/broadcast"
+      action={action}
       method="POST"
       onSubmit={(e) => {
         if (!confirm("לשלוח לכולם?")) e.preventDefault();

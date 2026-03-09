@@ -15,7 +15,9 @@ function redirectAdmin(req: NextRequest, msg: string) {
 export async function POST(req: NextRequest) {
   const form = await req.formData();
   const sessionOk = await getAdminSession();
-  const tokenOk = verifyImportToken((form.get("import_token") as string) ?? null);
+  const tokenFromBody = (form.get("import_token") as string) ?? null;
+  const tokenFromQuery = req.nextUrl.searchParams.get("import_token");
+  const tokenOk = verifyImportToken(tokenFromBody ?? tokenFromQuery ?? null);
   if (!sessionOk && !tokenOk) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
 
   const ip = await getClientIp();
