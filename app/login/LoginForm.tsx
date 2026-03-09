@@ -20,7 +20,10 @@ export default function LoginForm() {
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok === true) {
-        window.location.href = "/admin";
+        const token = (data as { token?: string }).token;
+        window.location.href = token
+          ? "/admin?session=" + encodeURIComponent(token)
+          : "/admin";
         return;
       }
       if (res.status === 429 || data.error === "rate") {

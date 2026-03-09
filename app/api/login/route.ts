@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { attachSessionCookie } from "@/lib/auth";
+import { createSessionJwt } from "@/lib/session-jwt";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
@@ -22,9 +22,8 @@ export async function POST(req: NextRequest) {
   }
 
   if (password === ADMIN_PASSWORD) {
-    const res = NextResponse.json({ ok: true });
-    await attachSessionCookie(res);
-    return res;
+    const token = await createSessionJwt();
+    return NextResponse.json({ ok: true, token });
   }
 
   return NextResponse.json({ ok: false, error: "wrong" }, { status: 401 });
