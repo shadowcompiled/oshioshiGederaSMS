@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { setAdminSession, attachSessionCookie } from "@/lib/auth";
+import { attachSessionCookie } from "@/lib/auth";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 
@@ -9,19 +9,23 @@ export async function POST(req: NextRequest) {
   const ip = await getClientIp();
   const { ok } = checkRateLimit(ip, "login", LIMITS.login.max);
   if (!ok) {
-    return NextResponse.redirect(new URL("/login?error=rate", req.url), 303);
+    return NextResponse.json({ ok: false, error: "rate" }, { status: 429 });
   }
 
-  const form = await req.formData();
-  const password = (form.get("password") as string) ?? "";
+  let password = "";
+  try {
+    const form = await req.formData();
+    password = (form.get("password") as string) ?? "";
+  } catch {
+    const body = await req.json().catch(() => ({}));
+    password = (body as { password?: string }).password ?? "";
+  }
 
   if (password === ADMIN_PASSWORD) {
-    await setAdminSession();
-    const adminUrl = new URL("/admin", req.url);
-    const res = NextResponse.redirect(adminUrl, 302);
+    const res = NextResponse.json({ ok: true });
     await attachSessionCookie(res);
     return res;
   }
 
-  return NextResponse.redirect(new URL("/login?error=wrong", req.url), 303);
+  return NextResponse.json({ ok: false, error: "wrong" }, { status: 401 });
 }

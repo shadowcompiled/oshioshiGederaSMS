@@ -1,8 +1,42 @@
 "use client";
 
+import { useState } from "react";
+
 export default function LoginForm() {
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
+    const form = e.currentTarget;
+    const formData = new FormData(form);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok === true) {
+        window.location.href = "/admin";
+        return;
+      }
+      if (res.status === 429 || data.error === "rate") {
+        setError("rate");
+        return;
+      }
+      setError("wrong");
+    } catch {
+      setError("wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
-    <form action="/api/login" method="POST">
+    <form onSubmit={handleSubmit}>
       <div className="form-group">
         <input
           type="password"
@@ -10,9 +44,14 @@ export default function LoginForm() {
           placeholder="סיסמה"
           required
           autoComplete="current-password"
+          disabled={loading}
         />
       </div>
-      <button type="submit">כניסה</button>
+      {error === "wrong" && <p className="error">סיסמה שגויה</p>}
+      {error === "rate" && <p className="error">יותר מדי ניסיונות. נסה שוב מאוחר יותר.</p>}
+      <button type="submit" disabled={loading}>
+        {loading ? "נכנס..." : "כניסה"}
+      </button>
     </form>
   );
 }
