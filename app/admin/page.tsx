@@ -4,6 +4,7 @@ import { getAdminSession } from "@/lib/auth";
 import { getDb, queryCustomers, mapRow, initDb } from "@/lib/db";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
+import { importCustomersAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
@@ -59,7 +60,7 @@ export default async function AdminPage({
           <h3 style={{ marginTop: 0 }}>📢 שליחת הודעה ({activeCount} פעילים)</h3>
           <BroadcastForm />
           {msg && <p style={{ color: "blue", fontWeight: "bold", marginTop: "10px" }}>{msg}</p>}
-          <UploadForm />
+          <UploadForm importAction={importCustomersAction} />
         </div>
 
         <h3 style={{ borderBottom: "2px solid #d32f2f", paddingBottom: "5px", display: "inline-block", marginBottom: "15px" }}>
