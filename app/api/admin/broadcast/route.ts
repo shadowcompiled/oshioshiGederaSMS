@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
+import { verifyImportToken } from "@/lib/security";
 import { getDb, queryCustomers } from "@/lib/db";
 import { getAppSecret } from "@/lib/security";
 import { getClientIp } from "@/lib/get-ip";
@@ -12,17 +13,18 @@ function redirectAdmin(req: NextRequest, msg: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const ok = await getAdminSession();
-  if (!ok) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
+  const form = await req.formData();
+  const sessionOk = await getAdminSession();
+  const tokenOk = verifyImportToken((form.get("import_token") as string) ?? null);
+  if (!sessionOk && !tokenOk) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
 
   const ip = await getClientIp();
   const { ok: rateOk } = checkRateLimit(ip, "broadcast", LIMITS.broadcast.max);
-  if (!rateOk) return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("יותר מדי בקשות"), req.url), 303);
+  if (!rateOk) return redirectAdmin(req, "יותר מדי בקשות");
 
-  const form = await req.formData();
   const message = (form.get("message") as string)?.trim() ?? "";
   if (!message || message.length > 1000) {
-    return NextResponse.redirect(new URL("/admin?msg=" + encodeURIComponent("הודעה לא תקינה"), req.url), 303);
+    return redirectAdmin(req, "הודעה לא תקינה");
   }
 
   const db = getDb();

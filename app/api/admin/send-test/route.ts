@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
+import { verifyImportToken } from "@/lib/security";
 import { formatPhone, isValidPhone } from "@/lib/validation";
 
 const SMS_LOGIN = process.env.ANDROID_SMS_GATEWAY_LOGIN;
@@ -13,10 +14,11 @@ function redirectAdmin(req: NextRequest, msg: string) {
 }
 
 export async function POST(req: NextRequest) {
-  const ok = await getAdminSession();
-  if (!ok) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
-
   const form = await req.formData();
+  const sessionOk = await getAdminSession();
+  const tokenOk = verifyImportToken((form.get("import_token") as string) ?? null);
+  if (!sessionOk && !tokenOk) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
+
   const rawPhone = ((form.get("phone") as string) ?? "").trim();
   const message = ((form.get("message") as string) ?? "").trim();
 

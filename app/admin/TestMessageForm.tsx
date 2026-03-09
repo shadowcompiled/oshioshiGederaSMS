@@ -1,6 +1,8 @@
 "use client";
 
-export default function TestMessageForm() {
+type Props = { importToken: string };
+
+export default function TestMessageForm({ importToken }: Props) {
   return (
     <form
       className="admin-test-form"
@@ -8,6 +10,7 @@ export default function TestMessageForm() {
       method="POST"
       style={{ display: "flex", flexDirection: "column", gap: "8px", maxWidth: "400px", marginTop: "12px", width: "100%" }}
     >
+      <input type="hidden" name="import_token" value={importToken} />
       <h4 style={{ margin: "0 0 4px 0" }}>📱 שליחת הודעת בדיקה</h4>
       <label style={{ fontSize: "13px" }}>
         מספר טלפון

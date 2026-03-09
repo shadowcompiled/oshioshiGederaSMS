@@ -81,10 +81,10 @@ export default async function AdminPage({
 
         <div className="admin-card">
           <h3 style={{ marginTop: 0 }}>📢 שליחת הודעה ({activeCount} פעילים)</h3>
-          <BroadcastForm />
+          <BroadcastForm importToken={importToken} />
           {msg && <p style={{ color: "blue", fontWeight: "bold", marginTop: "10px" }}>{msg}</p>}
           <UploadForm importToken={importToken} />
-          <TestMessageForm />
+          <TestMessageForm importToken={importToken} />
         </div>
 
         <AdminStats signupsByDate={signupsByDate} cityCounts={cityCounts} />

@@ -1,6 +1,8 @@
 "use client";
 
-export default function BroadcastForm() {
+type Props = { importToken: string };
+
+export default function BroadcastForm({ importToken }: Props) {
   return (
     <form
       action="/api/admin/broadcast"
@@ -9,6 +11,7 @@ export default function BroadcastForm() {
         if (!confirm("לשלוח לכולם?")) e.preventDefault();
       }}
     >
+      <input type="hidden" name="import_token" value={importToken} />
       <textarea
         name="message"
         placeholder="הקלד הודעה כאן..."
