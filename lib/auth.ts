@@ -14,13 +14,21 @@ export async function setAdminSession(): Promise<void> {
 }
 
 export async function getAdminSession(): Promise<boolean> {
-  const cookieStore = await cookies();
-  const token = cookieStore.get(COOKIE_NAME)?.value;
-  if (!token) return false;
-  const valid = await verifySessionToken(token);
-  if (!valid) return false;
-  await setAdminSession();
-  return true;
+  try {
+    const cookieStore = await cookies();
+    const token = cookieStore.get(COOKIE_NAME)?.value;
+    if (!token) return false;
+    const valid = await verifySessionToken(token);
+    if (!valid) return false;
+    try {
+      await setAdminSession();
+    } catch {
+      // Cookie refresh failed; token is still valid, allow access
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** Call this on any admin API response (redirect or file) so the browser keeps the session. */

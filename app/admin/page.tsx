@@ -19,18 +19,29 @@ export default async function AdminPage({
   const ok = await getAdminSession();
   if (!ok) redirect("/login");
 
-  const importToken = createImportToken();
+  let importToken = "";
+  try {
+    importToken = createImportToken();
+  } catch {
+    importToken = "";
+  }
 
-  await initDb();
-  const db = getDb();
-  const rows = await queryCustomers(
-    db,
-    "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at, received_message_at FROM customers ORDER BY active DESC, name ASC",
-    []
-  );
-  if (db.type === "sqlite") db.conn.close();
+  let customers: Awaited<ReturnType<typeof mapRow>>[] = [];
+  try {
+    await initDb();
+    const db = getDb();
+    const rows = await queryCustomers(
+      db,
+      "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at, received_message_at FROM customers ORDER BY active DESC, name ASC",
+      []
+    );
+    if (db.type === "sqlite") db.conn.close();
+    customers = rows.map(mapRow);
+  } catch (e) {
+    console.error("Admin page DB error:", e);
+    redirect("/login?error=system");
+  }
 
-  const customers = rows.map(mapRow);
   const activeCount = customers.filter((c) => c.active).length;
   const newCount = customers.filter((c) => c.active && !c.received_message_at).length;
   const params = await searchParams;

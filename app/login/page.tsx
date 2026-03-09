@@ -14,6 +14,7 @@ export default async function LoginPage({
   const error = params.error;
   const isWrong = error === "wrong";
   const isRate = error === "rate";
+  const isSystem = error === "system";
 
   return (
     <div className="container">
@@ -23,6 +24,7 @@ export default async function LoginPage({
       <h2>כניסת מנהל</h2>
       {isWrong && <p className="error">סיסמה שגויה</p>}
       {isRate && <p className="error">יותר מדי ניסיונות. נסה שוב מאוחר יותר.</p>}
+      {isSystem && <p className="error">שגיאת מערכת. בדוק את ההגדרות (מאגר נתונים, SECRET_KEY).</p>}
       <LoginForm />
       <Link href="/" className="small-text">
         חזור לדף הבית
