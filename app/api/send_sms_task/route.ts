@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAppSecret, generateSecureToken } from "@/lib/security";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 import { initDb, getDb, runDb } from "@/lib/db";
@@ -34,8 +35,8 @@ export async function POST(req: NextRequest) {
 
   const token = generateSecureToken(phone);
   const clean = phone.replace("+", "");
-  const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.nextUrl.origin;
-  const unsubLink = `${baseUrl}/unsubscribe/${clean}?token=${token}`;
+  const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
+  const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
   const finalMsg = `${message}\n\nלהסרה: ${unsubLink}`;
 
   const payload = {

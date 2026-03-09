@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession, attachSessionCookie } from "@/lib/auth";
 import { verifyImportToken, generateSecureToken } from "@/lib/security";
+import { getPublicAppUrl } from "@/lib/app-url";
 import { formatPhone, isValidPhone } from "@/lib/validation";
 import { initDb, getDb, runDb } from "@/lib/db";
 
@@ -40,8 +41,8 @@ export async function POST(req: NextRequest) {
 
   const token = generateSecureToken(phone);
   const clean = phone.replace("+", "");
-  const baseUrl = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : req.nextUrl.origin;
-  const unsubLink = `${baseUrl}/unsubscribe/${clean}?token=${token}`;
+  const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
+  const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
   const finalMsg = `${message}\n\nלהסרה: ${unsubLink}`;
 
   const payload = {

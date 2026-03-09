@@ -3,11 +3,11 @@ import { getAdminSession, attachSessionCookie } from "@/lib/auth";
 import { verifyImportToken } from "@/lib/security";
 import { getDb, runDb } from "@/lib/db";
 
-async function redirectAdmin(req: NextRequest, sessionOk: boolean, msg?: string) {
+async function redirectAdmin(req: NextRequest, msg?: string) {
   const url = new URL("/admin", req.url);
   if (msg) url.searchParams.set("msg", msg);
   const res = NextResponse.redirect(url, 303);
-  if (sessionOk) await attachSessionCookie(res);
+  await attachSessionCookie(res);
   return res;
 }
 
@@ -16,13 +16,13 @@ export async function POST(req: NextRequest) {
   const sessionOk = await getAdminSession();
   const tokenOk = verifyImportToken((formData.get("import_token") as string) ?? null);
   if (!sessionOk && !tokenOk) {
-    return redirectAdmin(req, false, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
+    return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.");
   }
 
   const phone = ((formData.get("phone") as string) ?? "").trim();
   const action = ((formData.get("action") as string) ?? "").trim();
   if (!phone || !["block", "unblock"].includes(action)) {
-    return redirectAdmin(req, sessionOk);
+    return redirectAdmin(req);
   }
 
   let formatted = phone.startsWith(" ") ? "+" + phone.trimStart() : phone;
@@ -53,5 +53,5 @@ export async function POST(req: NextRequest) {
   }
   if (db.type === "sqlite") db.conn.close();
 
-  return redirectAdmin(req, sessionOk);
+  return redirectAdmin(req);
 }
