@@ -131,7 +131,6 @@ export default async function AdminPage({
     joinedAt: toIsraelDateTimeStr(c.created_at),
     removedAt: toIsraelDateTimeStr(c.unsubscribed_at),
     removedBy: removalActor(c),
-    isNew: c.active && !c.received_message_at,
   }));
 
   return (
@@ -173,10 +172,6 @@ export default async function AdminPage({
             <dt className="kpi-label">הוסרו ב-30 יום</dt>
             <dd className="kpi-value">{kpis.removedLast30}</dd>
           </div>
-          <div className="kpi-card">
-            <dt className="kpi-label">טרם קיבלו הודעה</dt>
-            <dd className="kpi-value">{kpis.neverMessaged}</dd>
-          </div>
         </dl>
 
         <section className="admin-card" aria-labelledby="broadcast-heading">
@@ -192,7 +187,6 @@ export default async function AdminPage({
           <BroadcastForm
             importToken={importToken}
             activeCount={kpis.active}
-            newCount={kpis.neverMessaged}
             footerKeyword={getUnsubscribeKeyword()}
             canReceiveReplies={canReceiveSmsReplies()}
             appBaseUrl={getPublicAppUrl()}

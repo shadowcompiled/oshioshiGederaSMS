@@ -16,11 +16,13 @@ export type SmsPreview = {
   units: number;
   segments: number;
   unsubLink: string;
-  /** True when the text is byte-exact for this recipient (a test send). */
+  /** True when the text is byte-exact for this recipient (a single test). */
   exactRecipient: boolean;
   recipient: string | null;
+  /** Every number a test send will go to. Empty for a broadcast. */
+  recipients: string[];
   audience: {
-    mode: "test" | "all" | "new_only";
+    mode: "test" | "all";
     recipients: number;
     totalSegments: number;
   };
@@ -46,7 +48,6 @@ type Props = {
 const AUDIENCE_LABEL: Record<SmsPreview["audience"]["mode"], string> = {
   test: "הודעת בדיקה",
   all: "כל הלקוחות הפעילים",
-  new_only: "לקוחות שטרם קיבלו הודעה",
 };
 
 export default function SmsPreviewDialog({ preview, sending, onConfirm, onCancel }: Props) {
@@ -122,7 +123,15 @@ export default function SmsPreviewDialog({ preview, sending, onConfirm, onCancel
         <p className="sms-preview-to">
           {isTest ? (
             <>
-              אל <strong dir="ltr">{preview.recipient}</strong>
+              אל{" "}
+              {preview.recipients.map((phone, i) => (
+                <span key={phone}>
+                  {i > 0 && ", "}
+                  <bdi>
+                    <strong>{phone}</strong>
+                  </bdi>
+                </span>
+              ))}
             </>
           ) : (
             <>
@@ -140,7 +149,9 @@ export default function SmsPreviewDialog({ preview, sending, onConfirm, onCancel
 
         {!preview.exactRecipient && (
           <p className="sms-preview-hint">
-            קישור ההסרה בתצוגה הוא לדוגמה — בהודעה עצמה כל נמען מקבל קישור עם המספר שלו, באותו אורך.
+            {isTest
+              ? "התצוגה היא ההודעה של הנמען הראשון — כל אחד מקבל קישור הסרה עם המספר שלו, באותו אורך."
+              : "קישור ההסרה בתצוגה הוא לדוגמה — בהודעה עצמה כל נמען מקבל קישור עם המספר שלו, באותו אורך."}
           </p>
         )}
 

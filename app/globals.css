@@ -2930,3 +2930,109 @@ body:has(.sheet)::before {
   color: var(--on-accent);
   font-weight: 600;
 }
+
+/* Test-send panel: saved recipients plus an add row (app/admin/BroadcastForm). */
+.test-panel {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #ddd;
+}
+
+.test-panel-title {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 8px;
+}
+
+.test-people {
+  list-style: none;
+  margin: 0 0 10px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.test-people li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: #f7f7f8;
+}
+
+.test-people label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  margin: 0;
+  min-height: 36px;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  /* Ticking a row must not paint a selection over the name and number. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.test-people input[type="checkbox"] {
+  width: 22px;
+  height: 22px;
+  min-height: 22px;
+  flex-shrink: 0;
+  accent-color: var(--brand-red);
+  cursor: pointer;
+}
+
+.test-person-name {
+  font-weight: 600;
+  color: #222;
+}
+
+.test-person-phone {
+  color: #5f5a55;
+  font-size: 0.75rem;
+}
+
+.test-person-remove {
+  width: auto;
+  min-width: 40px;
+  min-height: 36px;
+  padding: 0 8px;
+  margin: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  color: #b71c1c;
+  font-size: 0.875rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .test-person-remove:hover {
+    border-color: #b71c1c;
+    border-radius: 6px;
+  }
+}
+
+.test-add-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.test-send-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+
+.test-send-row .sms-test-hint {
+  flex: 1 1 14rem;
+  margin: 0;
+}

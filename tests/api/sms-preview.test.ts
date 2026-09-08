@@ -127,7 +127,7 @@ describe("input validation", () => {
 
 describe("test-send preview", () => {
   it("renders the exact text for that recipient, footer included", async () => {
-    const { p } = await preview({ message: "מבצע 1+1", mode: "test", phone: "0501234567" });
+    const { p } = await preview({ message: "מבצע 1+1", mode: "test", phones: ["0501234567"] });
     expect(p.exactRecipient).toBe(true);
     expect(p.recipient).toBe("+972501234567");
     // The leading character is the invisible RTL mark the handset needs.
@@ -139,7 +139,7 @@ describe("test-send preview", () => {
   });
 
   it("reports units and segments over the full text, not just the typed part", async () => {
-    const { p } = await preview({ message: "היי", mode: "test", phone: "0501234567" });
+    const { p } = await preview({ message: "היי", mode: "test", phones: ["0501234567"] });
     expect(p.units).toBe(p.text.length);
     expect(p.units).toBeGreaterThan("היי".length);
     expect(p.segments).toBeGreaterThanOrEqual(1);
@@ -147,7 +147,7 @@ describe("test-send preview", () => {
 
   it("does not need QSTASH_TOKEN — a test send bypasses the queue", async () => {
     delete process.env.QSTASH_TOKEN;
-    const { p } = await preview({ message: "היי", mode: "test", phone: "0501234567" });
+    const { p } = await preview({ message: "היי", mode: "test", phones: ["0501234567"] });
     expect(p.blocking).toBeNull();
   });
 });
@@ -165,11 +165,12 @@ describe("broadcast preview", () => {
     expect(p.audience.mode).toBe("all");
   });
 
-  it("narrows the count to never-messaged customers for the new-only audience", async () => {
+  it("has one audience: every active member, with no cohort filter left", async () => {
     audienceRows = [{ phone: "+9725011" }];
-    const { p } = await preview({ message: "היי", mode: "broadcast", send_to: "new_only" });
-    expect(lastQuery).toContain("received_message_at IS NULL");
-    expect(p.audience.mode).toBe("new_only");
+    const { p } = await preview({ message: "היי", mode: "broadcast" });
+    expect(lastQuery).toContain("active = 1");
+    expect(lastQuery).not.toContain("received_message_at");
+    expect(p.audience.mode).toBe("all");
   });
 
   it("uses a stand-in recipient and says so, since there is no single number", async () => {
@@ -213,7 +214,7 @@ describe("sender reporting", () => {
   it("says plainly that a test run would not really deliver", async () => {
     // The test environment always gets the mock provider — that guard is the
     // point of lib/sms — so the preview must not imply a real send.
-    const { p } = await preview({ message: "היי", mode: "test", phone: "0501234567" });
+    const { p } = await preview({ message: "היי", mode: "test", phones: ["0501234567"] });
     expect(p.sender.provider).toBe("mock");
     expect(p.sender.delivers).toBe(false);
     expect(p.sender.environment).toBe("test");
@@ -225,8 +226,69 @@ describe("the preview never sends", () => {
   it("leaves the outbox empty across preview calls", async () => {
     process.env.QSTASH_TOKEN = "qs-token";
     audienceRows = [{ phone: "+9725011" }];
-    await preview({ message: "היי", mode: "test", phone: "0501234567" });
+    await preview({ message: "היי", mode: "test", phones: ["0501234567"] });
     await preview({ message: "היי", mode: "broadcast" });
     expect(mockSmsOutbox).toHaveLength(0);
+  });
+});
+
+describe("multi-recipient test preview", () => {
+  it("lists every recipient and counts them", async () => {
+    const { p } = await preview({
+      message: "היי",
+      mode: "test",
+      phones: ["0501234567", "0521111111", "0533333333"],
+    });
+    expect(p.recipients).toEqual(["+972501234567", "+972521111111", "+972533333333"]);
+    expect(p.audience.recipients).toBe(3);
+    expect(p.audience.totalSegments).toBe(3 * p.segments);
+  });
+
+  it("stops claiming byte-exactness once there is more than one recipient", async () => {
+    // The body shown is rendered for the first number; the others differ only
+    // in their own opt-out link, so the dialog must say so rather than imply
+    // the text is exact for all of them.
+    const one = await preview({ message: "היי", mode: "test", phones: ["0501234567"] });
+    expect(one.p.exactRecipient).toBe(true);
+    const many = await preview({ message: "היי", mode: "test", phones: ["0501234567", "0521111111"] });
+    expect(many.p.exactRecipient).toBe(false);
+    expect(many.p.recipient).toBe("+972501234567");
+  });
+
+  it("de-duplicates a number chosen twice, so nobody is texted twice", async () => {
+    const { p } = await preview({
+      message: "היי",
+      mode: "test",
+      phones: ["0501234567", "+972501234567", "050-1234567"],
+    });
+    expect(p.recipients).toEqual(["+972501234567"]);
+    expect(p.audience.recipients).toBe(1);
+  });
+
+  it("refuses more than four numbers, matching the send endpoint's cap", async () => {
+    const { status, json } = await preview({
+      message: "היי",
+      mode: "test",
+      phones: ["0501111111", "0502222222", "0503333333", "0504444444", "0505555555"],
+    });
+    expect(status).toBe(400);
+    expect(json.msg).toContain("4");
+  });
+
+  it("rejects the whole set when one number is unusable", async () => {
+    // Better to refuse than to quietly text three of the four and leave the
+    // operator believing all of them were checked.
+    const { status, json } = await preview({
+      message: "היי",
+      mode: "test",
+      phones: ["0501234567", "12345"],
+    });
+    expect(status).toBe(400);
+    expect(json.msg).toContain("12345");
+  });
+
+  it("refuses an empty selection", async () => {
+    const { status } = await preview({ message: "היי", mode: "test", phones: [] });
+    expect(status).toBe(400);
   });
 });

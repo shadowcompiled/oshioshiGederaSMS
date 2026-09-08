@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession } from "@/lib/auth";
 import { verifyImportToken } from "@/lib/security";
 import { initDb, getDb, queryCustomers } from "@/lib/db";
-import { formatPhone, isValidPhone } from "@/lib/validation";
+import { parseTestRecipients } from "@/lib/test-recipients";
 import { smsSendability } from "@/lib/sms";
 import { renderBroadcastSms, PREVIEW_SAMPLE_PHONE } from "@/lib/sms-render";
 import { smsUnits, billedMessagesForUnits } from "@/lib/sms-segments";
@@ -24,13 +24,12 @@ const MAX_MESSAGE_LENGTH = 1000;
 
 type Note = { level: "info" | "warn" | "error"; text: string };
 
-async function countAudience(onlyNew: boolean): Promise<number> {
+async function countAudience(): Promise<number> {
   await initDb();
   const db = getDb();
   try {
     const activeClause = db.type === "postgres" ? "active = TRUE" : "active = 1";
-    const whereClause = onlyNew ? `${activeClause} AND received_message_at IS NULL` : activeClause;
-    const rows = await queryCustomers(db, `SELECT phone FROM customers WHERE ${whereClause}`, []);
+    const rows = await queryCustomers(db, `SELECT phone FROM customers WHERE ${activeClause}`, []);
     return rows.length;
   } finally {
     if (db.type === "sqlite") db.conn.close();
@@ -38,7 +37,14 @@ async function countAudience(onlyNew: boolean): Promise<number> {
 }
 
 export async function POST(req: NextRequest) {
-  let body: { import_token?: string; message?: string; send_to?: string; mode?: string; phone?: string };
+  let body: {
+    import_token?: string;
+    message?: string;
+    mode?: string;
+    /** Test mode: up to four numbers (see the send endpoint's cap). */
+    phones?: unknown;
+    phone?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -66,28 +72,27 @@ export async function POST(req: NextRequest) {
   }
 
   const isTest = body.mode === "test";
-  const onlyNew = body.send_to === "new_only";
 
   // A test renders against the real destination, so its preview is byte-exact.
   // An audience preview has no single recipient, so it uses a stand-in number
   // of the same length — the link, and therefore the segment count, measures
   // true even though the digits are a placeholder.
   let recipientPhone = PREVIEW_SAMPLE_PHONE;
+  let testPhones: string[] = [];
   if (isTest) {
-    const phone = formatPhone((body.phone ?? "").trim());
-    if (!isValidPhone(phone)) {
-      return NextResponse.json(
-        { ok: false, msg: "מספר טלפון לא תקין. נא להזין מספר מלא (למשל 0501234567)." },
-        { status: 400 }
-      );
-    }
-    recipientPhone = phone;
+    // The very same parser the send endpoint uses, so a set the preview
+    // approves is a set the send will accept — same validation, same cap, same
+    // de-duplication.
+    const parsed = parseTestRecipients({ phones: body.phones, phone: body.phone });
+    if (!parsed.ok) return NextResponse.json({ ok: false, msg: parsed.error }, { status: 400 });
+    testPhones = parsed.phones;
+    recipientPhone = testPhones[0];
   }
 
-  let recipients = 1;
+  let recipients = testPhones.length;
   if (!isTest) {
     try {
-      recipients = await countAudience(onlyNew);
+      recipients = await countAudience();
     } catch (e) {
       console.error("SMS preview: audience count failed", e);
       return NextResponse.json({ ok: false, msg: "לא ניתן לספור את קהל היעד." }, { status: 500 });
@@ -120,9 +125,7 @@ export async function POST(req: NextRequest) {
   }
 
   if (!isTest && recipients === 0) {
-    blocking =
-      blocking ??
-      (onlyNew ? "אין לקוחות חדשים (שטרם קיבלו הודעה) לשליחה." : "אין לקוחות פעילים לשליחה.");
+    blocking = blocking ?? "אין לקוחות פעילים לשליחה.";
   }
 
   if (!isTest && !process.env.QSTASH_TOKEN) {
@@ -152,10 +155,14 @@ export async function POST(req: NextRequest) {
       units,
       segments,
       unsubLink: rendered.unsubLink,
-      exactRecipient: isTest,
+      // Exact for a single test recipient. With several, the body shown is
+      // rendered for the first — the others differ only in their own opt-out
+      // link, which is the same length.
+      exactRecipient: isTest && testPhones.length === 1,
       recipient: isTest ? recipientPhone : null,
+      recipients: testPhones,
       audience: {
-        mode: isTest ? "test" : onlyNew ? "new_only" : "all",
+        mode: isTest ? "test" : "all",
         recipients,
         totalSegments: recipients * segments,
       },

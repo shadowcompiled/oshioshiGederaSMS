@@ -4,7 +4,6 @@ export type KpiCustomer = {
   active: boolean;
   created_at: string | null;
   unsubscribed_at: string | null;
-  received_message_at: string | null;
 };
 
 export type Kpis = {
@@ -12,7 +11,6 @@ export type Kpis = {
   active: number;
   newLast7: number;
   removedLast30: number;
-  neverMessaged: number;
 };
 
 /** YYYY-MM-DD string arithmetic in UTC (inputs are already calendar dates). */
@@ -33,18 +31,14 @@ export function computeKpis(customers: KpiCustomer[], todayIsrael: string): Kpis
   let active = 0;
   let newLast7 = 0;
   let removedLast30 = 0;
-  let neverMessaged = 0;
 
   for (const c of customers) {
-    if (c.active) {
-      active++;
-      if (!c.received_message_at) neverMessaged++;
-    }
+    if (c.active) active++;
     const created = toIsraelDateStr(c.created_at);
     if (created && created >= weekCutoff && created <= todayIsrael) newLast7++;
     const removed = toIsraelDateStr(c.unsubscribed_at);
     if (!c.active && removed && removed >= monthCutoff && removed <= todayIsrael) removedLast30++;
   }
 
-  return { total: customers.length, active, newLast7, removedLast30, neverMessaged };
+  return { total: customers.length, active, newLast7, removedLast30 };
 }

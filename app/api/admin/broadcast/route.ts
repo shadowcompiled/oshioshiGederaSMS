@@ -41,21 +41,18 @@ export async function POST(req: NextRequest) {
     }
 
     await initDb();
-    const onlyNew = form.get("send_to") === "new_only";
     const db = getDb();
+    // Every active member, always. The former "only those who never received a
+    // message" audience is gone: it split the club into cohorts that no longer
+    // mean anything to the business.
     const activeClause = db.type === "postgres" ? "active = TRUE" : "active = 1";
-    const newClause = "AND received_message_at IS NULL";
-    const whereClause = onlyNew ? `${activeClause} ${newClause}` : activeClause;
     const rows = await queryCustomers(
       db,
-      `SELECT phone FROM customers WHERE ${whereClause}`,
+      `SELECT phone FROM customers WHERE ${activeClause}`,
       []
     );
     if (db.type === "sqlite") db.conn.close();
 
-    if (onlyNew && rows.length === 0) {
-      return respond(req, false, "אין לקוחות חדשים (שטרם קיבלו הודעה) לשליחה.", sessionOk);
-    }
     if (rows.length === 0) {
       return respond(req, false, "אין לקוחות פעילים לשליחה.", sessionOk);
     }

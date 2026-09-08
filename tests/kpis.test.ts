@@ -21,7 +21,6 @@ describe("computeKpis", () => {
       active: 0,
       newLast7: 0,
       removedLast30: 0,
-      neverMessaged: 0,
     });
   });
 
@@ -29,14 +28,13 @@ describe("computeKpis", () => {
     const k = computeKpis(
       [
         cust({}),
-        cust({ received_message_at: null }),
+        cust({}),
         cust({ active: false, unsubscribed_at: "2026-06-01 10:00:00" }),
       ],
       TODAY
     );
     expect(k.total).toBe(3);
     expect(k.active).toBe(2);
-    expect(k.neverMessaged).toBe(1);
   });
 
   it("counts signups within the last 7 Israel-local days (inclusive window)", () => {

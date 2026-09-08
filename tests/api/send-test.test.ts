@@ -186,3 +186,88 @@ describe("a mock test-send does not mark the customer as contacted", () => {
     expect(dbWrites.filter((w) => w.sql.includes("received_message_at"))).toHaveLength(0);
   });
 });
+
+describe("multiple test recipients", () => {
+  it("sends one message per number, each with its own opt-out link", async () => {
+    const res = await sendTestPOST(
+      testSendReq({
+        import_token: createImportToken(),
+        phones: ["0501234567", "0521111111", "0533333333"],
+        message: "היי",
+      })
+    );
+    expect((await res.json()).ok).toBe(true);
+    expect(mockSmsOutbox).toHaveLength(3);
+    expect(mockSmsOutbox.map((m) => m.to)).toEqual([
+      "+972501234567",
+      "+972521111111",
+      "+972533333333",
+    ]);
+    // Same wording for everyone, but the link is personal to each number.
+    const links = mockSmsOutbox.map((m) => m.text.match(/unsubscribe\/(\d+)\?token=(\w+)/)![0]);
+    expect(new Set(links).size).toBe(3);
+  });
+
+  it("texts a number chosen twice only once", async () => {
+    const res = await sendTestPOST(
+      testSendReq({
+        import_token: createImportToken(),
+        phones: ["0501234567", "+972501234567"],
+        message: "היי",
+      })
+    );
+    expect((await res.json()).ok).toBe(true);
+    expect(mockSmsOutbox).toHaveLength(1);
+  });
+
+  it("refuses more than four numbers without sending any", async () => {
+    const res = await sendTestPOST(
+      testSendReq({
+        import_token: createImportToken(),
+        phones: ["0501111111", "0502222222", "0503333333", "0504444444", "0505555555"],
+        message: "היי",
+      })
+    );
+    expect((await res.json()).ok).toBe(false);
+    expect(mockSmsOutbox).toHaveLength(0);
+  });
+
+  it("rejects the whole set when one number is unusable, sending nothing", async () => {
+    // A partial send would leave the operator believing every handset was
+    // checked when one never got the message.
+    const res = await sendTestPOST(
+      testSendReq({ import_token: createImportToken(), phones: ["0501234567", "nope"], message: "היי" })
+    );
+    expect((await res.json()).ok).toBe(false);
+    expect(mockSmsOutbox).toHaveLength(0);
+  });
+
+  it("refuses an empty selection", async () => {
+    const res = await sendTestPOST(
+      testSendReq({ import_token: createImportToken(), phones: [], message: "היי" })
+    );
+    expect((await res.json()).ok).toBe(false);
+    expect(mockSmsOutbox).toHaveLength(0);
+  });
+
+  it("still accepts the single-phone form used by the plain form POST", async () => {
+    const res = await sendTestPOST(
+      formSendReq({ import_token: createImportToken(), phone: "0501234567", message: "היי" })
+    );
+    expect(res.status).toBe(303);
+    expect(mockSmsOutbox).toHaveLength(1);
+  });
+
+  it("names every number it reached in the confirmation", async () => {
+    const res = await sendTestPOST(
+      testSendReq({
+        import_token: createImportToken(),
+        phones: ["0501234567", "0521111111"],
+        message: "היי",
+      })
+    );
+    const { msg } = await res.json();
+    expect(msg).toContain("+972501234567");
+    expect(msg).toContain("+972521111111");
+  });
+});

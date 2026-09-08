@@ -23,7 +23,6 @@ export type CustomerView = {
   removedAt: string | null;
   /** Who ended it. "unknown" covers rows removed before this was recorded. */
   removedBy: "admin" | "customer_link" | "customer_sms" | "unknown" | null;
-  isNew: boolean; // active and never messaged
 };
 
 const REMOVED_BY_LABEL: Record<
@@ -104,7 +103,6 @@ function StatusBadges({ c }: { c: CustomerView }) {
   return (
     <span style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}>
       {c.active ? <span className="badge badge-active">פעיל</span> : <span className="badge badge-removed">הוסר</span>}
-      {c.isNew && <span className="badge badge-new">חדש</span>}
     </span>
   );
 }

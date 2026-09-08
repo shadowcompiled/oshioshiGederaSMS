@@ -1,14 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession, attachSessionCookie } from "@/lib/auth";
 import { verifyImportToken } from "@/lib/security";
-import { formatPhone, isValidPhone } from "@/lib/validation";
+import { parseTestRecipients } from "@/lib/test-recipients";
 import { initDb, getDb, runDb } from "@/lib/db";
 import { sendSms, smsSendability } from "@/lib/sms";
 import { renderBroadcastSms } from "@/lib/sms-render";
 
 /**
- * Send one real message to a number the operator names — the "does this
+ * Send the drafted message to a handful of real numbers — the "does this
  * actually arrive, and does it look right on a phone?" check.
+ *
+ * Up to the cap in lib/test-recipients.ts per run, so a draft can be checked on more
+ * than one handset at once (an iPhone and an Android render Hebrew and long
+ * links differently, and the owner usually wants a second pair of eyes on the
+ * wording). The cap exists because this endpoint bypasses the QStash queue and
+ * sends inline: it is a rehearsal tool, not a second broadcast path.
  *
  * The text is produced by lib/sms-render.ts, the same renderer the QStash
  * worker uses, so a test is a genuine rehearsal of a broadcast. (It previously
@@ -20,7 +26,16 @@ import { renderBroadcastSms } from "@/lib/sms-render";
  * a full-page redirect. The 303 path is kept for a plain form POST.
  */
 
-type Payload = { import_token?: string; phone?: string; message?: string };
+const MAX_MESSAGE_LENGTH = 1000;
+
+type Payload = {
+  import_token?: string;
+  /** Preferred: up to four numbers. */
+  phones?: unknown;
+  /** Single-number form, kept for the plain form POST. */
+  phone?: string;
+  message?: string;
+};
 
 function wantsJson(req: NextRequest): boolean {
   return req.headers.get("accept")?.includes("application/json") ?? false;
@@ -56,26 +71,18 @@ export async function POST(req: NextRequest) {
   }
 
   const message = (payload.message ?? "").trim();
-  if (!message || message.length > 1000) {
-    return respond(req, false, "הודעת הבדיקה חייבת להכיל עד 1000 תווים.", sessionOk);
+  if (!message || message.length > MAX_MESSAGE_LENGTH) {
+    return respond(req, false, `הודעת הבדיקה חייבת להכיל עד ${MAX_MESSAGE_LENGTH} תווים.`, sessionOk);
   }
 
-  const phone = formatPhone((payload.phone ?? "").trim());
-  if (!isValidPhone(phone)) {
-    return respond(
-      req,
-      false,
-      "מספר טלפון לא תקין. נא להזין מספר מלא (למשל 0501234567 או +972501234567).",
-      sessionOk
-    );
-  }
+  const parsed = parseTestRecipients(payload);
+  if (!parsed.ok) return respond(req, false, parsed.error, sessionOk);
+  const { phones } = parsed;
 
   // Ask the registry what it would do before asking it to do it, so a blocked
-  // send explains itself instead of returning a generic failure.
-  const sender = smsSendability(phone);
-  if (sender.refusal) {
-    return respond(req, false, "השליחה נחסמה: " + sender.refusal, sessionOk);
-  }
+  // send explains itself instead of returning a generic failure. Checked per
+  // number, because the non-production allowlist is per number.
+  const sender = smsSendability(phones[0]);
   if (sender.provider !== "mock" && !sender.configured) {
     return respond(
       req,
@@ -85,41 +92,59 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { text } = renderBroadcastSms(message, phone, req.nextUrl.origin);
+  const sent: string[] = [];
+  const failed: { phone: string; error: string }[] = [];
 
-  try {
-    const result = await sendSms(phone, text);
-    if (!result.ok) {
-      console.error("SMS send error (test)", result.status ?? "", result.error);
-      return respond(
-        req,
-        false,
-        "שליחת הודעת הבדיקה נכשלה: " + (result.error || result.status),
-        sessionOk
-      );
+  for (const phone of phones) {
+    const refusal = smsSendability(phone).refusal;
+    if (refusal) {
+      failed.push({ phone, error: refusal });
+      continue;
     }
-
-    // Only a message that really left the building counts as "this customer has
-    // been contacted"; a mock send must not remove them from the new-customer
-    // audience.
-    if (sender.delivers) {
-      try {
-        await initDb();
-        const db = getDb();
-        const now = new Date().toISOString();
-        await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
-        if (db.type === "sqlite") db.conn.close();
-      } catch (e) {
-        console.error("Failed to set received_message_at (test)", phone, e);
+    try {
+      // Rendered per recipient: each one carries their own opt-out link.
+      const { text } = renderBroadcastSms(message, phone, req.nextUrl.origin);
+      const result = await sendSms(phone, text);
+      if (result.ok) sent.push(phone);
+      else {
+        console.error("SMS send error (test)", phone, result.status ?? "", result.error);
+        failed.push({ phone, error: String(result.error || result.status || "שליחה נכשלה") });
       }
+    } catch (e) {
+      console.error("Send test SMS error:", phone, e);
+      failed.push({ phone, error: e instanceof Error ? e.message : "שגיאה בשליחה" });
     }
-
-    const msg = sender.delivers
-      ? `הודעת בדיקה נשלחה ל־${phone}.`
-      : `מצב הדגמה (${sender.provider}): ההודעה נרשמה ביומן השרת ולא נשלחה באמת ל־${phone}.`;
-    return respond(req, true, msg, sessionOk);
-  } catch (e) {
-    console.error("Send test SMS error:", e);
-    return respond(req, false, "שגיאה בשליחת הודעת הבדיקה.", sessionOk);
   }
+
+  // Only messages that really left the building count as "this customer has
+  // been contacted"; a mock send must not change the customer record.
+  if (sender.delivers && sent.length > 0) {
+    try {
+      await initDb();
+      const db = getDb();
+      const now = new Date().toISOString();
+      for (const phone of sent) {
+        await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
+      }
+      if (db.type === "sqlite") db.conn.close();
+    } catch (e) {
+      console.error("Failed to set received_message_at (test)", e);
+    }
+  }
+
+  if (sent.length === 0) {
+    const detail = failed.map((f) => `${f.phone} — ${f.error}`).join("; ");
+    return respond(req, false, "שליחת הודעת הבדיקה נכשלה: " + detail, sessionOk);
+  }
+
+  const list = sent.join(", ");
+  const okMsg = sender.delivers
+    ? `הודעת בדיקה נשלחה ל־${list}.`
+    : `מצב הדגמה (${sender.provider}): ההודעה נרשמה ביומן השרת ולא נשלחה באמת ל־${list}.`;
+  const partial = failed.length
+    ? ` נכשלו: ${failed.map((f) => `${f.phone} — ${f.error}`).join("; ")}`
+    : "";
+  // A partial failure is not a success: the operator must see which handset
+  // never got the rehearsal.
+  return respond(req, failed.length === 0, okMsg + partial, sessionOk);
 }
