@@ -6,6 +6,9 @@ import { createImportToken } from "@/lib/security";
 import { getDb, queryCustomers, mapRow, initDb, type CustomerRow } from "@/lib/db";
 import { israelToday, toIsraelDateStr } from "@/lib/dates";
 import { computeKpis } from "@/lib/kpis";
+import { canReceiveSmsReplies } from "@/lib/sms";
+import { getUnsubscribeKeyword } from "@/lib/unsubscribe";
+import { getPublicAppUrl } from "@/lib/app-url";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
 import ResetDbForm from "./ResetDbForm";
@@ -155,7 +158,20 @@ export default async function AdminPage({
           <h2 id="broadcast-heading" style={{ marginTop: 0 }}>
             <span aria-hidden="true">📢 </span>שליחת הודעה
           </h2>
-          <BroadcastForm importToken={importToken} activeCount={kpis.active} newCount={kpis.neverMessaged} />
+          {/* The composer estimates SMS segments as the message is typed, and
+              the opt-out footer it has to account for depends on server-only
+              configuration: which provider is active, whether that sender can
+              receive replies, and the public base URL of the opt-out link.
+              Passing them down keeps the estimate honest without shipping the
+              env to the browser. */}
+          <BroadcastForm
+            importToken={importToken}
+            activeCount={kpis.active}
+            newCount={kpis.neverMessaged}
+            footerKeyword={getUnsubscribeKeyword()}
+            canReceiveReplies={canReceiveSmsReplies()}
+            appBaseUrl={getPublicAppUrl()}
+          />
           {msg && (
             <p style={{ color: "#0d47a1", fontWeight: "bold", marginTop: "10px" }} role="status">
               {msg}

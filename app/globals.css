@@ -2705,3 +2705,134 @@ body:has(.sheet)::before {
     border: 1px solid currentColor;
   }
 }
+
+/* Test-send row — its own number, sitting under the broadcast button. */
+.sms-test-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px dashed #ddd;
+}
+
+.sms-test-hint {
+  font-size: 0.75rem;
+  color: #5f5a55;
+  margin-top: 6px;
+}
+
+/* Preview-before-send dialog. The admin cards are light, so this panel is
+   light too rather than inheriting the dark public-page palette. */
+.sms-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(12, 10, 9, 0.66);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(16px + var(--safe-top)) 16px calc(16px + var(--safe-bottom));
+  overflow-y: auto;
+}
+
+.sms-preview-panel {
+  direction: rtl;
+  text-align: right;
+  background: #fff;
+  color: #222;
+  border-radius: 14px;
+  padding: 20px;
+  width: 100%;
+  max-width: 30rem;
+  max-height: 100%;
+  overflow-y: auto;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.4);
+}
+
+.sms-preview-title {
+  margin: 0 0 4px;
+  font-size: 1.0625rem;
+  color: #222;
+}
+
+.sms-preview-to {
+  font-size: 0.8125rem;
+  color: #5f5a55;
+  margin-bottom: 12px;
+}
+
+/* The message as a phone would show it: the operator is checking line breaks
+   and where the link lands, so preserve whitespace and let long links wrap. */
+.sms-preview-bubble {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  /* `start`, not the panel's inherited `right`: the bubble carries dir="auto",
+     so a message that opens with Latin text resolves to LTR and must align
+     left — which is how the handset will render it. */
+  text-align: start;
+  background: #f4f4f5;
+  border: 1px solid #e4e4e7;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: #1c1917;
+}
+
+.sms-preview-hint {
+  font-size: 0.75rem;
+  color: #5f5a55;
+  margin-top: 8px;
+}
+
+.sms-preview-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+  margin: 14px 0 0;
+  font-size: 0.8125rem;
+}
+
+.sms-preview-facts dt {
+  color: #5f5a55;
+  font-size: 0.6875rem;
+}
+
+.sms-preview-facts dd {
+  margin: 0;
+  font-weight: 700;
+  color: #222;
+}
+
+.sms-preview-note {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+.sms-preview-note[data-level="info"] {
+  background: #eef2ff;
+  color: #29348a;
+}
+
+.sms-preview-note[data-level="warn"] {
+  background: #fff4e5;
+  color: #8a4b00;
+}
+
+.sms-preview-note[data-level="error"] {
+  background: #ffebee;
+  color: #b71c1c;
+  font-weight: 600;
+}
+
+.sms-preview-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}

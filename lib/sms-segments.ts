@@ -1,3 +1,5 @@
+import { unsubFooter } from "@/lib/sms-footer";
+
 /**
  * Hebrew SMS is always UCS-2 (any char outside GSM 03.38 forces the whole
  * message to UCS-2, and every Hebrew letter is outside it). Billing counts
@@ -24,15 +26,21 @@ const SAMPLE_PHONE_DIGITS = "972501234567";
 const SAMPLE_TOKEN = "x".repeat(32); // generateSecureToken (lib/security.ts) emits 32 hex chars (.slice(0,32))
 
 /**
- * Estimated UTF-16 length of the footer the SMS worker appends
- * (see app/api/send_sms_task/route.ts):
- *   "\n\nלהסרה: השב/י {keyword} או לחצ/י כאן: {link}"
- * Token length and recipient number vary by a few chars — treat as ≈.
+ * Estimated UTF-16 length of the footer the SMS worker appends — the same
+ * template lib/sms-footer.ts renders for real, measured against a sample link.
+ * Token length is fixed and the recipient number varies by a char or two, so
+ * treat the result as ≈.
+ *
+ * `canReply` must match the live sender: an alphanumeric sender id drops the
+ * reply-keyword clause, which is ~13 characters and can be the difference
+ * between a two- and a three-segment message. The admin composer passes the
+ * server's real value (see app/admin/page.tsx) rather than assuming.
  */
 export function estimateUnsubFooterUnits(
   keyword = "1111",
-  baseUrl = "https://example.vercel.app"
+  baseUrl = "https://example.vercel.app",
+  canReply = true
 ): number {
   const link = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${SAMPLE_PHONE_DIGITS}?token=${SAMPLE_TOKEN}`;
-  return `\n\nלהסרה: השב/י ${keyword} או לחצ/י כאן: ${link}`.length;
+  return unsubFooter(link, { canReply, keyword }).length;
 }

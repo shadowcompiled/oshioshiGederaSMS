@@ -195,3 +195,47 @@ export async function sendSms(
   }
   return result;
 }
+
+export type SmsSendability = {
+  /** Adapter that would handle the send ("019", "android_gateway", "mock"). */
+  provider: string;
+  environment: SmsEnvironment;
+  /** Whether that adapter has the credentials it needs. */
+  configured: boolean;
+  /** True only when a send would reach a real handset. False for the mock. */
+  delivers: boolean;
+  /** Alphanumeric sender name the recipient will see, when there is one. */
+  senderName: string;
+  canReceiveReplies: boolean;
+  /**
+   * Why a send would be refused before it ever reaches the vendor — the
+   * non-production allowlist guard. Null when nothing stands in the way.
+   * Pass a phone to have it checked against SMS_TEST_ALLOWLIST.
+   */
+  refusal: string | null;
+};
+
+/**
+ * What would happen if we sent right now — the same decisions sendSms() makes,
+ * reported instead of executed. This exists so the admin preview can state the
+ * truth ("the mock provider is active: nothing will actually be delivered",
+ * "this number is not in SMS_TEST_ALLOWLIST") *before* the operator commits,
+ * rather than after a send silently goes nowhere.
+ */
+export function smsSendability(phone?: string): SmsSendability {
+  const provider = getSmsProvider();
+  const configured = provider.isConfigured();
+  const isMock = provider.name === mockSmsProvider.name;
+  return {
+    provider: provider.name,
+    environment: smsEnvironment(),
+    configured,
+    delivers: !isMock && configured,
+    senderName:
+      provider.name === sms019Provider.name
+        ? (process.env.SMS_019_SOURCE || process.env.SMS_SENDER_ID || "").trim()
+        : "",
+    canReceiveReplies: canReceiveSmsReplies(),
+    refusal: phone ? (refusedOutsideAllowlist(provider, phone)?.error ?? null) : null,
+  };
+}

@@ -1,0 +1,18 @@
+# Local secrets must never ride along with a deploy.
+#
+# The CLI already falls back to .gitignore (which lists .env.local), but this
+# is worth stating outright: Next.js loads .env.local in every environment
+# except test — production included. So a copy that reached the deployment
+# would silently override the Vercel dashboard variables, switching the live
+# SMS provider without anyone choosing to. Provider configuration belongs in
+# the Vercel environment, not in an uploaded file.
+.env
+.env.local
+.env.*.local
+
+# Local dev database — never deploy a copy of it.
+customers.db
+
+# Build/test artefacts that Vercel regenerates.
+.next
+tsconfig.tsbuildinfo

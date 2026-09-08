@@ -89,6 +89,32 @@ All outbound SMS goes through one registry, [lib/sms](lib/sms/index.ts). A provi
 2. Anywhere else that is not production — local dev **and Vercel preview deployments**, which share production env vars — also gets the mock, unless `SMS_ALLOW_REAL_SMS=true` is set deliberately.
 3. Even then, non-production sends are refused unless the destination is listed in `SMS_TEST_ALLOWLIST` (numbers you own). An empty allowlist refuses everything, so a stray broadcast is inert.
 
+## Sending a message: preview, then send
+
+Every send from `/admin` is a two-step action. Pressing a send button only asks
+`POST /api/admin/sms-preview` what would go out; nothing is queued or sent until
+the operator approves what the dialog shows.
+
+The preview renders through [lib/sms-render.ts](lib/sms-render.ts) — the same
+renderer the QStash worker uses — so the approved text is the delivered text,
+opt-out footer included. It reports:
+
+- the full message body with the footer appended, as the handset will show it;
+- character count and SMS segments, plus `segments × recipients` for a broadcast;
+- the active provider, its sender name, and whether it can receive replies;
+- a **blocking reason** when the send cannot work at all — the mock provider is
+  active, a real provider has no credentials, the destination is outside
+  `SMS_TEST_ALLOWLIST`, the audience is empty, or `QSTASH_TOKEN` is missing.
+  A blocked preview disables the confirm button, so the operator learns before
+  pressing send rather than from a message that quietly reaches nobody.
+
+**Test sends** go to a number the operator types (remembered in `localStorage`)
+and bypass the QStash queue. A test message is byte-identical to a broadcast —
+this is asserted directly in [tests/api/send-test.test.ts](tests/api/send-test.test.ts)
+by comparing the outbox entries from both routes. A test send that only reached
+the mock provider deliberately does **not** stamp `received_message_at`, so a
+rehearsal never drops a customer out of the "never messaged" audience.
+
 ## Routes (unchanged logic)
 
 | Path | Description |
@@ -96,7 +122,7 @@ All outbound SMS goes through one registry, [lib/sms](lib/sms/index.ts). A provi
 | `/` | VIP signup form (details → SMS code → membership) |
 | `/terms` | Club terms, privacy & SMS consent (draft, pending lawyer review) |
 | `/login` | Admin/waiter login (username field selects which) |
-| `/admin` | Customer list, broadcast SMS, CSV export, block/unblock, permanent delete |
+| `/admin` | Customer list, broadcast SMS (preview + test send), CSV export, block/unblock, permanent delete |
 | `/waiter` | Waiter screen: search customers, view/redeem gifts |
 | `/unsubscribe/[phone]?token=...` | Unsubscribe link from SMS |
 | `POST /api/signup/start` | Validate the form, text a one-time code |
@@ -105,7 +131,9 @@ All outbound SMS goes through one registry, [lib/sms](lib/sms/index.ts). A provi
 | `POST /api/login` | Admin/waiter login |
 | `GET /api/logout` | Logout |
 | `GET /api/admin/export-csv` | Export CSV |
+| `POST /api/admin/sms-preview` | Render the exact outgoing message + audience/provider facts (sends nothing) |
 | `POST /api/admin/broadcast` | Queue broadcast SMS via QStash |
+| `POST /api/admin/send-test` | Send one test SMS to a named number (JSON or form) |
 | `GET /api/admin/toggle?phone=&action=block\|unblock` | Block/unblock customer |
 | `POST /api/admin/delete-customer` | Permanently delete one customer and their gifts |
 | `GET /api/admin/force-init` | Recreate `customers` table |

@@ -1,85 +1,159 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import {
   smsUnits,
   segmentsForUnits,
   estimateUnsubFooterUnits,
 } from "@/lib/sms-segments";
+import SmsPreviewDialog, { type SmsPreview } from "./SmsPreviewDialog";
 
-type Props = { importToken: string; activeCount: number; newCount: number };
+/**
+ * The broadcast composer. Sending is deliberately a two-step action: pressing
+ * a send button only asks the server for a preview, and nothing leaves the
+ * building until the operator approves the rendered message in the dialog.
+ *
+ * The live counter below the textarea is a client-side estimate for typing
+ * feedback; the numbers in the preview come from the server, which knows the
+ * real opt-out link and footer variant. `footerKeyword` and
+ * `canReceiveReplies` are passed down from the server page so that even the
+ * estimate reflects the provider that is actually configured.
+ */
 
-export default function BroadcastForm({ importToken, activeCount, newCount }: Props) {
+type Props = {
+  importToken: string;
+  activeCount: number;
+  newCount: number;
+  footerKeyword: string;
+  canReceiveReplies: boolean;
+  appBaseUrl: string;
+};
+
+type Mode = "broadcast" | "test";
+
+const TEST_PHONE_STORAGE_KEY = "oshi-admin-test-phone";
+
+export default function BroadcastForm({
+  importToken,
+  activeCount,
+  newCount,
+  footerKeyword,
+  canReceiveReplies,
+  appBaseUrl,
+}: Props) {
   const ids = useId();
   const messageId = `${ids}-message`;
   const counterId = `${ids}-counter`;
+  const testPhoneId = `${ids}-test-phone`;
   const [message, setMessage] = useState("");
   const [audience, setAudience] = useState<"all" | "new_only">("all");
+  const [testPhone, setTestPhone] = useState("");
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const [previewing, setPreviewing] = useState<Mode | null>(null);
+  const [pending, setPending] = useState<{ mode: Mode; preview: SmsPreview } | null>(null);
 
-  const footerUnits = useMemo(() => estimateUnsubFooterUnits(), []);
+  // The test number is almost always the phone of the operator, so remember it
+  // rather than making them retype it on every visit.
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(TEST_PHONE_STORAGE_KEY);
+      if (saved) setTestPhone(saved);
+    } catch {
+      // Private mode / blocked storage: the field just starts empty.
+    }
+  }, []);
+
+  const footerUnits = useMemo(
+    () => estimateUnsubFooterUnits(footerKeyword, appBaseUrl || undefined, canReceiveReplies),
+    [footerKeyword, appBaseUrl, canReceiveReplies]
+  );
   const units = smsUnits(message);
   const totalUnits = units === 0 ? 0 : units + footerUnits;
   const totalSegments = segmentsForUnits(totalUnits);
   const recipients = audience === "all" ? activeCount : newCount;
   const level = totalSegments >= 4 ? "high" : totalSegments >= 3 ? "warn" : "ok";
+  const busy = sending || previewing !== null;
 
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const confirmMsg =
-      audience === "new_only"
-        ? `לשלוח רק ל-${newCount} לקוחות חדשים (שטרם קיבלו הודעה)?\n~${totalSegments} מקטעי SMS לנמען, ~${newCount * totalSegments} הודעות בסך הכל.`
-        : `לשלוח לכולם (${activeCount} פעילים)?\n~${totalSegments} מקטעי SMS לנמען, ~${activeCount * totalSegments} הודעות בסך הכל.`;
-    if (!confirm(confirmMsg)) return;
-
+  /** Step one of every send: ask the server what would actually go out. */
+  async function requestPreview(mode: Mode) {
     setFeedback(null);
-    setSending(true);
-    const formData = new FormData();
-    formData.set("message", message);
-    formData.set("send_to", audience);
-    formData.set("import_token", importToken);
-
+    setPreviewing(mode);
     try {
-      const res = await fetch("/api/admin/broadcast", {
+      const res = await fetch("/api/admin/sms-preview", {
         method: "POST",
-        body: formData,
         credentials: "include",
-        headers: { Accept: "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          import_token: importToken,
+          message,
+          send_to: audience,
+          mode,
+          phone: mode === "test" ? testPhone : undefined,
+        }),
       });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok !== true || !data.preview) {
+        setFeedback({ ok: false, msg: data.msg ?? `שגיאה ${res.status} בהפקת התצוגה המקדימה.` });
+        return;
+      }
+      if (mode === "test") {
+        try {
+          window.localStorage.setItem(TEST_PHONE_STORAGE_KEY, testPhone.trim());
+        } catch {
+          // Not worth surfacing: the send itself is unaffected.
+        }
+      }
+      setPending({ mode, preview: data.preview as SmsPreview });
+    } catch (err) {
+      setFeedback({ ok: false, msg: err instanceof Error ? err.message : "שגיאת רשת." });
+    } finally {
+      setPreviewing(null);
+    }
+  }
+
+  /** Step two: the operator approved what they saw. */
+  async function confirmSend() {
+    if (!pending) return;
+    const { mode } = pending;
+    setSending(true);
+    try {
+      let res: Response;
+      if (mode === "test") {
+        res = await fetch("/api/admin/send-test", {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ import_token: importToken, phone: testPhone, message }),
+        });
+      } else {
+        const formData = new FormData();
+        formData.set("message", message);
+        formData.set("send_to", audience);
+        formData.set("import_token", importToken);
+        res = await fetch("/api/admin/broadcast", {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+      }
+
       const data = await res.json().catch(() => ({}));
       if (data.msg != null) {
         setFeedback({ ok: data.ok === true, msg: data.msg });
-        if (data.ok === true) setMessage("");
+        // A test send keeps the draft — checking the draft before the real
+        // broadcast is the entire point. A completed broadcast clears it.
+        if (data.ok === true && mode === "broadcast") setMessage("");
       } else {
         setFeedback({ ok: false, msg: res.ok ? "תגובה לא צפויה מהשרת." : `שגיאה ${res.status}` });
       }
+      setPending(null);
     } catch (err) {
       setFeedback({ ok: false, msg: err instanceof Error ? err.message : "שגיאת רשת." });
     } finally {
       setSending(false);
     }
-  }
-
-  function handleTestSend() {
-    const phone = window.prompt("מספר טלפון לבדיקה (למשל 0501234567):");
-    if (!phone) return;
-    // Plain form POST so the existing 303-redirect-with-?msg= flow shows the result.
-    const f = document.createElement("form");
-    f.method = "POST";
-    f.action = "/api/admin/send-test";
-    const add = (name: string, value: string) => {
-      const i = document.createElement("input");
-      i.type = "hidden";
-      i.name = name;
-      i.value = value;
-      f.appendChild(i);
-    };
-    add("import_token", importToken);
-    add("phone", phone);
-    add("message", message);
-    document.body.appendChild(f);
-    f.submit();
   }
 
   return (
@@ -99,7 +173,12 @@ export default function BroadcastForm({ importToken, activeCount, newCount }: Pr
           {feedback.msg}
         </p>
       )}
-      <form onSubmit={handleSubmit}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void requestPreview("broadcast");
+        }}
+      >
         <div className="form-group">
           <label htmlFor={messageId}>תוכן ההודעה</label>
           <textarea
@@ -107,7 +186,7 @@ export default function BroadcastForm({ importToken, activeCount, newCount }: Pr
             name="message"
             placeholder="הקלידו הודעה כאן..."
             required
-            disabled={sending}
+            disabled={busy}
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             style={{ height: "100px" }}
@@ -135,7 +214,7 @@ export default function BroadcastForm({ importToken, activeCount, newCount }: Pr
               value="all"
               checked={audience === "all"}
               onChange={() => setAudience("all")}
-              disabled={sending}
+              disabled={busy}
             />
             כל הפעילים ({activeCount})
           </label>
@@ -146,31 +225,69 @@ export default function BroadcastForm({ importToken, activeCount, newCount }: Pr
               value="new_only"
               checked={audience === "new_only"}
               onChange={() => setAudience("new_only")}
-              disabled={sending || newCount === 0}
+              disabled={busy || newCount === 0}
             />
             רק חדשים שטרם קיבלו הודעה ({newCount})
           </label>
           </div>
         </fieldset>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
-          <button
-            type="submit"
-            disabled={sending || message.trim() === "" || recipients === 0}
-            style={{ width: "auto", flex: "1 1 12rem" }}
-          >
-            {sending ? "שולח..." : `🚀 שלח ל-${recipients} לקוחות`}
-          </button>
+
+        <button
+          type="submit"
+          disabled={busy || message.trim() === "" || recipients === 0}
+          style={{ width: "auto", minWidth: "14rem", marginTop: "14px" }}
+        >
+          {previewing === "broadcast" ? "מכין תצוגה..." : `🚀 המשך לשליחה ל-${recipients} לקוחות`}
+        </button>
+
+        {/* Test send: its own number, so a rehearsal never depends on the
+            audience selection above. Not a nested form (HTML forbids that) —
+            the button goes through the same preview step. */}
+        <div className="sms-test-row">
+          <div className="form-group" style={{ margin: 0, flex: "1 1 12rem" }}>
+            <label htmlFor={testPhoneId}>שליחת בדיקה למספר</label>
+            <input
+              id={testPhoneId}
+              type="tel"
+              inputMode="tel"
+              autoComplete="tel"
+              dir="ltr"
+              placeholder="0501234567"
+              value={testPhone}
+              disabled={busy}
+              onChange={(e) => setTestPhone(e.target.value)}
+              style={{ margin: 0 }}
+            />
+          </div>
           <button
             type="button"
             className="btn-secondary"
-            onClick={handleTestSend}
-            disabled={sending || message.trim() === ""}
-            style={{ width: "auto", flex: "1 1 10rem" }}
+            onClick={() => void requestPreview("test")}
+            disabled={busy || message.trim() === "" || testPhone.trim() === ""}
+            style={{ width: "auto", flex: "0 1 11rem" }}
           >
-            <span aria-hidden="true">📱 </span>שלח בדיקה אליי
+            {previewing === "test" ? (
+              "מכין תצוגה..."
+            ) : (
+              <>
+                <span aria-hidden="true">📱 </span>בדיקה
+              </>
+            )}
           </button>
         </div>
+        <p className="sms-test-hint">
+          הודעת הבדיקה זהה לחלוטין להודעה שהלקוחות יקבלו, כולל קישור ההסרה.
+        </p>
       </form>
+
+      {pending && (
+        <SmsPreviewDialog
+          preview={pending.preview}
+          sending={sending}
+          onConfirm={() => void confirmSend()}
+          onCancel={() => setPending(null)}
+        />
+      )}
     </>
   );
 }

@@ -6,6 +6,7 @@ import {
   smsEnvironment,
   mockSmsOutbox,
   canReceiveSmsReplies,
+  smsSendability,
 } from "@/lib/sms";
 
 /**
@@ -211,5 +212,91 @@ describe("production selection", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2);
     expect(String(fetchSpy.mock.calls[0][0])).toContain("019sms.co.il");
     expect(String(fetchSpy.mock.calls[1][0])).toContain("sms-gate.app");
+  });
+});
+
+/**
+ * smsSendability reports the guard's verdict instead of executing it, so the
+ * admin preview can warn the operator BEFORE they press send rather than
+ * after a message quietly goes nowhere. It must agree with sendSms in every
+ * case — that is the whole contract.
+ */
+describe("smsSendability", () => {
+  it("reports the mock provider as non-delivering during a test run", () => {
+    const s = smsSendability("+972501234567");
+    expect(s.provider).toBe("mock");
+    expect(s.environment).toBe("test");
+    expect(s.delivers).toBe(false);
+    expect(s.refusal).toBeNull();
+  });
+
+  it("reports a configured 019 sender as delivering, with its sender name", () => {
+    stubEnvironment("production");
+    vi.stubEnv("SMS_PROVIDER", "019");
+    stub019Creds();
+    const s = smsSendability("+972501234567");
+    expect(s.provider).toBe("019");
+    expect(s.delivers).toBe(true);
+    expect(s.senderName).toBe("OshiOshi");
+    // An alphanumeric sender is one-way, which is what drops the reply
+    // keyword from the footer.
+    expect(s.canReceiveReplies).toBe(false);
+  });
+
+  it("reports a real provider with no credentials as not configured", () => {
+    stubEnvironment("production");
+    vi.stubEnv("SMS_PROVIDER", "019");
+    const s = smsSendability("+972501234567");
+    expect(s.configured).toBe(false);
+    expect(s.delivers).toBe(false);
+  });
+
+  it("surfaces the allowlist refusal for the exact number asked about", () => {
+    stubEnvironment("development");
+    vi.stubEnv("SMS_PROVIDER", "android_gateway");
+    vi.stubEnv("SMS_ALLOW_REAL_SMS", "true");
+    stubAndroidCreds();
+    vi.stubEnv("SMS_TEST_ALLOWLIST", "0541111111");
+    expect(smsSendability("+972501234567").refusal).toContain("not in SMS_TEST_ALLOWLIST");
+    expect(smsSendability("+972541111111").refusal).toBeNull();
+  });
+
+  it("agrees with sendSms: a reported refusal means the send is really refused", async () => {
+    stubEnvironment("development");
+    vi.stubEnv("SMS_PROVIDER", "android_gateway");
+    vi.stubEnv("SMS_ALLOW_REAL_SMS", "true");
+    stubAndroidCreds();
+    vi.stubEnv("SMS_TEST_ALLOWLIST", "0541111111");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const reported = smsSendability("+972501234567").refusal;
+    const actual = await sendSms("+972501234567", "hello");
+    expect(reported).not.toBeNull();
+    expect(actual.ok).toBe(false);
+    if (!actual.ok) expect(actual.error).toBe(reported);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("reports no refusal without a phone, since there is nothing to check yet", () => {
+    stubEnvironment("production");
+    stubAndroidCreds();
+    expect(smsSendability().refusal).toBeNull();
+  });
+});
+
+describe("a multi-word 019 sender name", () => {
+  it("is still one-way, so the footer must stay link-only", () => {
+    // "OSHI GEDERA" is a name rather than a number: nothing can text it back,
+    // which is what drops the reply keyword from the opt-out footer.
+    stubEnvironment("production");
+    vi.stubEnv("SMS_PROVIDER", "019");
+    vi.stubEnv("SMS_019_TOKEN", "t");
+    vi.stubEnv("SMS_019_USERNAME", "u");
+    vi.stubEnv("SMS_019_SOURCE", "OSHI GEDERA");
+    expect(canReceiveSmsReplies()).toBe(false);
+    const s = smsSendability("+972501234567");
+    expect(s.provider).toBe("019");
+    expect(s.delivers).toBe(true);
+    expect(s.senderName).toBe("OSHI GEDERA");
   });
 });

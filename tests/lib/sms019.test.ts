@@ -41,12 +41,23 @@ describe("isConfigured", () => {
     expect(sms019Provider.isConfigured()).toBe(true);
   });
 
-  it("rejects sender ids 019 would refuse (Hebrew, too long, '+')", () => {
+  it("rejects sender ids 019 would refuse (Hebrew, too long, punctuation, blank)", () => {
     vi.stubEnv("SMS_019_TOKEN", "t");
     vi.stubEnv("SMS_019_USERNAME", "u");
-    for (const bad of ["אושיאושי", "OshiOshiGedera", "+97250000", "Oshi Oshi", ""]) {
+    for (const bad of ["אושיאושי", "OshiOshiGedera", "+97250000", "Oshi-Oshi", "OSHI GEDERAA", "   ", ""]) {
       vi.stubEnv("SMS_SENDER_ID", bad);
       expect(sms019Provider.isConfigured()).toBe(false);
+    }
+  });
+
+  it("accepts a registered multi-word sender name within the 11-char budget", () => {
+    // "OSHI GEDERA" is exactly 11 characters counting the space, and it is the
+    // sender 019 has approved on this account — the adapter used to refuse it.
+    vi.stubEnv("SMS_019_TOKEN", "t");
+    vi.stubEnv("SMS_019_USERNAME", "u");
+    for (const good of ["OSHI GEDERA", "Oshi Oshi", "OshiOshi", "0559999900"]) {
+      vi.stubEnv("SMS_SENDER_ID", good);
+      expect(sms019Provider.isConfigured()).toBe(true);
     }
   });
 });
@@ -132,5 +143,29 @@ describe("send", () => {
     const res = await sms019Provider.send({ to: "0501234567", text: "hi" });
     expect(res.ok).toBe(false);
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("multi-word sender name", () => {
+  it("sends the space-containing name through to 019 verbatim", async () => {
+    vi.stubEnv("SMS_019_TOKEN", "t");
+    vi.stubEnv("SMS_019_USERNAME", "u");
+    vi.stubEnv("SMS_SENDER_ID", "OSHI GEDERA");
+    const fetchSpy = vi.fn().mockResolvedValue(okJson({ status: 0 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const res = await sms019Provider.send({ to: "0501234567", text: "hi" });
+    expect(res.ok).toBe(true);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).sms.source).toBe("OSHI GEDERA");
+  });
+
+  it("trims a padded name rather than failing the length check", async () => {
+    vi.stubEnv("SMS_019_TOKEN", "t");
+    vi.stubEnv("SMS_019_USERNAME", "u");
+    vi.stubEnv("SMS_SENDER_ID", "  OSHI GEDERA  ");
+    const fetchSpy = vi.fn().mockResolvedValue(okJson({ status: 0 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const res = await sms019Provider.send({ to: "0501234567", text: "hi" });
+    expect(res.ok).toBe(true);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body).sms.source).toBe("OSHI GEDERA");
   });
 });

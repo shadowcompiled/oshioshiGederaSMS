@@ -22,9 +22,15 @@ import type { OutboundSms, SendSmsResult, SmsProvider } from "../types";
 
 const DEFAULT_019_API_URL = "https://019sms.co.il/api";
 
-/** 019's documented source constraint: max 11 chars, digits and English
- *  letters only (no "+", no spaces, no Hebrew). */
-const SOURCE_RE = /^[A-Za-z0-9]{1,11}$/;
+/**
+ * 019's source constraint: at most 11 characters, English letters and digits,
+ * and a space is allowed inside the name — "OSHI GEDERA" is a real registered
+ * sender on this account and 019 delivers from it. What stays rejected is
+ * Hebrew, "+", other punctuation, anything past 11 characters, and a name made
+ * only of whitespace. The value is trimmed before it gets here, so the space
+ * this permits is always an internal one.
+ */
+const SOURCE_RE = /^(?=.*[A-Za-z0-9])[A-Za-z0-9 ]{1,11}$/;
 
 function sms019Config(): { token: string; username: string; source: string; url: string } {
   return {
@@ -65,7 +71,10 @@ export const sms019Provider: SmsProvider = {
     const source = (message.senderId || configuredSource).trim();
     if (!token || !username) return { ok: false, error: "019 SMS is not configured" };
     if (!SOURCE_RE.test(source)) {
-      return { ok: false, error: `019 sender id "${source}" is invalid (1-11 English letters/digits)` };
+      return {
+        ok: false,
+        error: `019 sender id "${source}" is invalid (1-11 English letters, digits or spaces)`,
+      };
     }
 
     const dest = to019Destination(message.to);
