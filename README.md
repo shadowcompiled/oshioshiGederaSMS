@@ -78,7 +78,9 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
 All outbound SMS goes through one registry, [lib/sms](lib/sms/index.ts). A provider is an adapter in `lib/sms/providers/` implementing `SmsProvider` (`isConfigured()` + `send()`); `SMS_PROVIDER` selects the active one:
 
 - **`android_gateway`** (default) — the Android SMS Gateway app; sender is the SIM's phone number.
-- **`019`** — Telzar 019; sends under an alphanumeric name (`SMS_SENDER_ID`, ≤11 English letters/digits, e.g. `OshiOshi`). Requires `SMS_019_TOKEN` + `SMS_019_USERNAME`. When the sender is a name (not a number), recipients can't reply, so the marketing footer automatically drops the reply-keyword instruction and keeps only the unsubscribe link.
+- **`019`** — Telzar 019; sends under an alphanumeric name (≤11 characters of English letters, digits or spaces — `OSHI GEDERA` is 11 counting the space, and 019 accepts it). Requires `SMS_019_TOKEN` + `SMS_019_USERNAME`. The sender is `SMS_019_SOURCE`, which takes precedence over the shared `SMS_SENDER_ID`; that precedence is the adapter's alone, because `sendSms` deliberately passes no sender of its own — otherwise the send and `canReceiveSmsReplies()` could pick different sources and the footer would describe a sender that was not used. When the sender is a name rather than a number, recipients can't reply, so the marketing footer automatically drops the reply-keyword instruction and keeps only the unsubscribe link.
+
+To check 019 credentials without delivering anything, POST the adapter's payload to `https://019sms.co.il/api/test` (or point `SMS_019_API_URL` there): it validates token, username, sender and payload shape and returns `{"status":0}` without sending.
 - **`mock`** — records and logs instead of sending. Always successful, never networked.
 
 `SMS_FALLBACK_PROVIDER` optionally names a second provider tried when the first send fails (production only) — e.g. run `SMS_PROVIDER=019` with `SMS_FALLBACK_PROVIDER=android_gateway` during a migration, and roll back by flipping one env var.

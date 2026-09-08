@@ -300,3 +300,71 @@ describe("a multi-word 019 sender name", () => {
     expect(s.senderName).toBe("OSHI GEDERA");
   });
 });
+
+/**
+ * The footer and the sender must never disagree.
+ *
+ * sendSms used to pass SMS_SENDER_ID down as a per-message senderId, which the
+ * 019 adapter preferred over SMS_019_SOURCE — while canReceiveSmsReplies() read
+ * SMS_019_SOURCE first. With both set, one numeric and one a name, the message
+ * went out from the name (no replies possible) while the footer told the
+ * customer to reply with the opt-out keyword: an opt-out route that silently
+ * does not work, which is the exact liability commit ec2ec55 set out to remove.
+ */
+describe("sender resolution agrees with the footer decision", () => {
+  function stub019Production() {
+    stubEnvironment("production");
+    vi.stubEnv("SMS_PROVIDER", "019");
+    vi.stubEnv("SMS_019_TOKEN", "t");
+    vi.stubEnv("SMS_019_USERNAME", "u");
+  }
+
+  /** The `source` 019 actually received for a send. */
+  async function sentSource(): Promise<string> {
+    const fetchSpy = vi.fn().mockResolvedValue(okJson({ status: 0 }));
+    vi.stubGlobal("fetch", fetchSpy);
+    const res = await sendSms("+972501234567", "hello");
+    expect(res.ok).toBe(true);
+    return JSON.parse(fetchSpy.mock.calls[0][1].body).sms.source;
+  }
+
+  it("SMS_019_SOURCE wins over SMS_SENDER_ID, as documented", async () => {
+    stub019Production();
+    vi.stubEnv("SMS_SENDER_ID", "OshiOshi");
+    vi.stubEnv("SMS_019_SOURCE", "0559999900");
+    expect(await sentSource()).toBe("0559999900");
+  });
+
+  it("a numeric SMS_019_SOURCE sends from that number AND allows replies", async () => {
+    stub019Production();
+    vi.stubEnv("SMS_SENDER_ID", "OshiOshi");
+    vi.stubEnv("SMS_019_SOURCE", "0559999900");
+    // Both halves must reach the same conclusion about the same sender.
+    expect(await sentSource()).toBe("0559999900");
+    expect(canReceiveSmsReplies()).toBe(true);
+  });
+
+  it("an alphanumeric sender sends from the name AND refuses replies", async () => {
+    stub019Production();
+    vi.stubEnv("SMS_019_SOURCE", "OSHI GEDERA");
+    expect(await sentSource()).toBe("OSHI GEDERA");
+    expect(canReceiveSmsReplies()).toBe(false);
+  });
+
+  it("falls back to SMS_SENDER_ID when no provider-specific source is set", async () => {
+    stub019Production();
+    vi.stubEnv("SMS_SENDER_ID", "OshiOshi");
+    expect(await sentSource()).toBe("OshiOshi");
+    expect(canReceiveSmsReplies()).toBe(false);
+  });
+
+  it("reports the sender it will really use", () => {
+    stub019Production();
+    vi.stubEnv("SMS_SENDER_ID", "OshiOshi");
+    vi.stubEnv("SMS_019_SOURCE", "0559999900");
+    // The preview must name the winning source, not the losing one.
+    const s = smsSendability("+972501234567");
+    expect(s.senderName).toBe("0559999900");
+    expect(s.canReceiveReplies).toBe(true);
+  });
+});

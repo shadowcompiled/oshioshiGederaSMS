@@ -165,11 +165,17 @@ export async function sendSms(
   opts: SendSmsOptions = {}
 ): Promise<SendSmsResult> {
   const provider = getSmsProvider();
-  const message: OutboundSms = {
-    to: phone,
-    text,
-    senderId: (process.env.SMS_SENDER_ID || "").trim() || undefined,
-  };
+  // No senderId here on purpose. SMS_SENDER_ID is *environment*, not a
+  // per-message choice, so resolving it belongs to the adapter that knows its
+  // vendor's precedence — and only the adapter's own view can agree with
+  // canReceiveSmsReplies() below. Injecting it here used to make
+  // message.senderId (SMS_SENDER_ID) beat SMS_019_SOURCE at send time while
+  // canReceiveSmsReplies() still read SMS_019_SOURCE first: set both, with a
+  // numeric source and an alphanumeric name, and the footer promised a reply
+  // keyword on a message sent from a name that can never receive one. The
+  // field stays on OutboundSms for a caller that genuinely wants to vary the
+  // name for one message.
+  const message: OutboundSms = { to: phone, text };
 
   const refused = refusedOutsideAllowlist(provider, phone);
   if (refused) {
