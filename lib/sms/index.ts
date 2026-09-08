@@ -3,6 +3,7 @@ import { androidGatewayProvider } from "./providers/android-gateway";
 import { sms019Provider } from "./providers/sms019";
 import { mockSmsProvider } from "./providers/mock";
 import { formatPhone } from "@/lib/validation";
+import { withRtlMark } from "@/lib/sms-footer";
 
 export type { OutboundSms, SendSmsResult, SmsProvider } from "./types";
 export { mockSmsOutbox } from "./providers/mock";
@@ -175,7 +176,11 @@ export async function sendSms(
   // keyword on a message sent from a name that can never receive one. The
   // field stays on OutboundSms for a caller that genuinely wants to vary the
   // name for one message.
-  const message: OutboundSms = { to: phone, text };
+  // Every outbound message passes here, including the welcome, birthday and
+  // verification texts that do not go through the broadcast renderer, so this
+  // is where the right-to-left mark is guaranteed. withRtlMark is idempotent,
+  // so text the renderer already marked is untouched.
+  const message: OutboundSms = { to: phone, text: withRtlMark(text) };
 
   const refused = refusedOutsideAllowlist(provider, phone);
   if (refused) {

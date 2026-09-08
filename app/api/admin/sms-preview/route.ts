@@ -5,7 +5,7 @@ import { initDb, getDb, queryCustomers } from "@/lib/db";
 import { formatPhone, isValidPhone } from "@/lib/validation";
 import { smsSendability } from "@/lib/sms";
 import { renderBroadcastSms, PREVIEW_SAMPLE_PHONE } from "@/lib/sms-render";
-import { smsUnits, segmentsForUnits } from "@/lib/sms-segments";
+import { smsUnits, billedMessagesForUnits } from "@/lib/sms-segments";
 
 /**
  * "What exactly am I about to send, and to whom?" — answered without sending.
@@ -96,7 +96,7 @@ export async function POST(req: NextRequest) {
 
   const rendered = renderBroadcastSms(message, recipientPhone, req.nextUrl.origin);
   const units = smsUnits(rendered.text);
-  const segments = segmentsForUnits(units);
+  const segments = billedMessagesForUnits(units);
   const sender = smsSendability(recipientPhone);
 
   const notes: Note[] = [];
@@ -129,10 +129,10 @@ export async function POST(req: NextRequest) {
     blocking = blocking ?? "חסר QSTASH_TOKEN — לא ניתן להעמיד הודעות בתור השליחה.";
   }
 
-  if (segments >= 3) {
+  if (segments >= 2) {
     notes.push({
-      level: segments >= 4 ? "error" : "warn",
-      text: `ההודעה מתפצלת ל-${segments} מקטעי SMS ומחויבת כ-${segments} הודעות לכל נמען.`,
+      level: segments >= 3 ? "error" : "warn",
+      text: `ההודעה ארוכה ומחויבת כ-${segments} הודעות לכל נמען.`,
     });
   }
 

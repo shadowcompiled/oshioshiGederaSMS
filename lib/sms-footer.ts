@@ -45,3 +45,31 @@ export function unsubFooter(link: string, opts: FooterOptions): string {
 export function withUnsubFooter(message: string, link: string, opts: FooterOptions): string {
   return `${message}${unsubFooter(link, opts)}`;
 }
+
+/**
+ * U+200F RIGHT-TO-LEFT MARK. Zero width, invisible, one UTF-16 unit.
+ */
+export const RLM = "‏";
+
+const HEBREW_RE = /[֐-׿]/;
+
+/**
+ * Force a Hebrew SMS to render right-to-left on the handset.
+ *
+ * A phone picks a message's paragraph direction from its first strongly
+ * directional character. Our messages open with the brand — "Oshi Oshi
+ * Gedera: היי …" — which is Latin, so the whole SMS was laid out
+ * left-to-right: the Hebrew came out aligned to the wrong edge, and the
+ * punctuation drifted to the wrong end of each line. An invisible RTL mark in
+ * front makes the first strong character an RTL one, so the message reads the
+ * way it was written.
+ *
+ * Idempotent, and applied only when there is Hebrew to align — so a purely
+ * Latin message is left exactly as it is, and a text that already carries the
+ * mark never collects a second one (it costs a character, and characters are
+ * billed).
+ */
+export function withRtlMark(text: string): string {
+  if (!text || text.startsWith(RLM) || !HEBREW_RE.test(text)) return text;
+  return RLM + text;
+}

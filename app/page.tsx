@@ -21,7 +21,6 @@ const BENEFITS = [
 ];
 
 export default function HomePage() {
-  const unsubKeyword = (process.env.UNSUBSCRIBE_KEYWORD || "1111").trim();
 
   return (
     <main className="sheet" id="main-content">
@@ -73,7 +72,7 @@ export default function HomePage() {
 
       <section className="sheet-section" aria-labelledby="join-heading">
         <h2 id="join-heading">הצטרפות למועדון</h2>
-        <VIPForm unsubKeyword={unsubKeyword} />
+        <VIPForm />
       </section>
 
       <footer className="sheet-foot">

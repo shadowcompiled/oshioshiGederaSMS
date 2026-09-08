@@ -3,7 +3,7 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import {
   smsUnits,
-  segmentsForUnits,
+  billedMessagesForUnits,
   estimateUnsubFooterUnits,
 } from "@/lib/sms-segments";
 import SmsPreviewDialog, { type SmsPreview } from "./SmsPreviewDialog";
@@ -70,9 +70,9 @@ export default function BroadcastForm({
   );
   const units = smsUnits(message);
   const totalUnits = units === 0 ? 0 : units + footerUnits;
-  const totalSegments = segmentsForUnits(totalUnits);
+  const totalSegments = billedMessagesForUnits(totalUnits);
   const recipients = audience === "all" ? activeCount : newCount;
-  const level = totalSegments >= 4 ? "high" : totalSegments >= 3 ? "warn" : "ok";
+  const level = totalSegments >= 3 ? "high" : totalSegments >= 2 ? "warn" : "ok";
   const busy = sending || previewing !== null;
 
   /** Step one of every send: ask the server what would actually go out. */
@@ -198,7 +198,7 @@ export default function BroadcastForm({
         <div id={counterId} className="sms-counter" data-level={level} aria-live="polite">
           <span>{units} תווים</span>
           <span>
-            כולל קישור הסרה: ~{totalUnits} תווים · ~{totalSegments} מקטעי SMS לנמען
+            כולל קישור הסרה: ~{totalUnits} תווים · ~{totalSegments} הודעות לחיוב לנמען
           </span>
         </div>
         {/* A radio group needs a group label, not just two field labels. The
@@ -249,6 +249,7 @@ export default function BroadcastForm({
             <input
               id={testPhoneId}
               type="tel"
+              className="input-ltr"
               inputMode="tel"
               autoComplete="tel"
               dir="ltr"

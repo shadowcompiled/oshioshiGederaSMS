@@ -110,3 +110,29 @@ export function toIsraelDateStr(value: string | Date | null | undefined): string
   if (Number.isNaN(d.getTime())) return null;
   return israelDateFmt.format(d);
 }
+
+const israelDateTimeFmt = new Intl.DateTimeFormat("en-GB", {
+  timeZone: ISRAEL_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/**
+ * A stored UTC timestamp as an exact Israel-local date and time
+ * ("31/12/2026, 23:45"), or null when empty/unparseable.
+ *
+ * The admin list shows this rather than the bare date because "when exactly
+ * did this person join, and when exactly did they leave" is a question the
+ * owner actually gets asked — and under the spam law, being able to answer it
+ * to the minute is the point of keeping the timestamps at all.
+ */
+export function toIsraelDateTimeStr(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  const d = parseStoredTimestamp(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return israelDateTimeFmt.format(d);
+}

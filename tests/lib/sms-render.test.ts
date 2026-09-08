@@ -1,8 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { renderBroadcastSms, currentFooterOptions, PREVIEW_SAMPLE_PHONE } from "@/lib/sms-render";
-import { unsubFooter, unsubscribeUrl, withUnsubFooter } from "@/lib/sms-footer";
-import { estimateUnsubFooterUnits, smsUnits, segmentsForUnits } from "@/lib/sms-segments";
+import { unsubFooter, unsubscribeUrl, withUnsubFooter, withRtlMark, RLM } from "@/lib/sms-footer";
+import { estimateUnsubFooterUnits, smsUnits, billedMessagesForUnits } from "@/lib/sms-segments";
 import { generateSecureToken } from "@/lib/security";
+import { sendSms, mockSmsOutbox } from "@/lib/sms";
 
 /**
  * The renderer is what makes "preview, then send" a promise rather than a
@@ -48,8 +49,10 @@ describe("renderBroadcastSms", () => {
     vi.stubEnv("APP_URL", "https://club.test");
     const message = "מבצע 1+1 על כל הסושי!";
     const { text, unsubLink } = renderBroadcastSms(message, "+972501234567");
-    expect(text.startsWith(message)).toBe(true);
-    expect(text).toBe(withUnsubFooter(message, unsubLink, currentFooterOptions()));
+    // Leading RTL mark aside (see "right-to-left rendering" below), the body is
+    // the operator's text untouched, with the footer appended.
+    expect(text).toBe(withRtlMark(withUnsubFooter(message, unsubLink, currentFooterOptions())));
+    expect(text.replace(RLM, "").startsWith(message)).toBe(true);
   });
 
   it("builds a per-recipient opt-out link signed for that number", () => {
@@ -97,7 +100,7 @@ describe("the preview matches what is sent", () => {
     const sample = renderBroadcastSms(message, PREVIEW_SAMPLE_PHONE).text;
     const real = renderBroadcastSms(message, "+972541234567").text;
     expect(smsUnits(sample)).toBe(smsUnits(real));
-    expect(segmentsForUnits(smsUnits(sample))).toBe(segmentsForUnits(smsUnits(real)));
+    expect(billedMessagesForUnits(smsUnits(sample))).toBe(billedMessagesForUnits(smsUnits(real)));
   });
 
   it("keeps the composer's footer estimate within a couple of chars of the real footer", () => {
@@ -131,5 +134,41 @@ describe("currentFooterOptions", () => {
   it("defaults the keyword to 1111", () => {
     vi.stubEnv("UNSUBSCRIBE_KEYWORD", "");
     expect(currentFooterOptions().keyword).toBe("1111");
+  });
+});
+
+/**
+ * A phone picks a message's direction from its first strongly directional
+ * character. Ours open with the Latin brand name, which laid the whole Hebrew
+ * message out left-to-right on the handset.
+ */
+describe("right-to-left rendering", () => {
+  it("marks a Hebrew message that opens with the Latin brand name", () => {
+    vi.stubEnv("APP_URL", "https://club.test");
+    const { text } = renderBroadcastSms("Oshi Oshi Gedera: היי אושר", "+972501234567");
+    expect(text.startsWith(RLM)).toBe(true);
+    // The mark is invisible and must not disturb the wording itself.
+    expect(text.slice(1).startsWith("Oshi Oshi Gedera: היי אושר")).toBe(true);
+  });
+
+  it("is idempotent, so the renderer and sendSms cannot both add one", () => {
+    expect(withRtlMark(withRtlMark("היי"))).toBe(withRtlMark("היי"));
+    expect(withRtlMark("היי").split(RLM).length - 1).toBe(1);
+  });
+
+  it("leaves a message with no Hebrew alone, rather than paying for the mark", () => {
+    expect(withRtlMark("Table ready in 10 minutes")).toBe("Table ready in 10 minutes");
+    expect(withRtlMark("")).toBe("");
+  });
+
+  it("costs exactly one billed character", () => {
+    expect(withRtlMark("היי").length).toBe("היי".length + 1);
+  });
+
+  it("applies to the lifecycle messages that skip the broadcast renderer", async () => {
+    // The welcome / birthday / verification texts go straight through sendSms.
+    mockSmsOutbox.length = 0;
+    await sendSms("+972501234567", "Oshi Oshi Gedera: היי אושר, איזה כיף שהצטרפת");
+    expect(mockSmsOutbox[0].text.startsWith(RLM)).toBe(true);
   });
 });

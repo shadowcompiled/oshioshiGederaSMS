@@ -75,3 +75,51 @@ describe("applySchema", () => {
     }
   });
 });
+
+describe("unsubscribe_source", () => {
+  it("is created on the customers table", async () => {
+    const db = memoryDb();
+    await applySchema(db);
+    if (db.type !== "sqlite") throw new Error("expected sqlite");
+    const cols = (db.conn.prepare("PRAGMA table_info(customers)").all() as { name: string }[]).map(
+      (c) => c.name
+    );
+    expect(cols).toContain("unsubscribe_source");
+  });
+
+  it("records who ended the membership, and clears on reactivation", async () => {
+    const db = memoryDb();
+    await applySchema(db);
+    if (db.type !== "sqlite") throw new Error("expected sqlite");
+    db.conn
+      .prepare(
+        "INSERT INTO customers (phone, name, email, date_of_birth, wedding_day, city, active) VALUES (?,?,?,?,?,?,1)"
+      )
+      .run("+972501234567", "בדיקה", "a@b.c", "1990-01-01", "", "גדרה");
+
+    const read = () =>
+      db.conn.prepare("SELECT active, unsubscribed_at, unsubscribe_source FROM customers").get() as {
+        active: number;
+        unsubscribed_at: string | null;
+        unsubscribe_source: string | null;
+      };
+
+    // An active member has nothing recorded.
+    expect(read().unsubscribe_source).toBeNull();
+
+    // The customer opts out via the link.
+    db.conn
+      .prepare("UPDATE customers SET active = 0, unsubscribed_at = ?, unsubscribe_source = ?")
+      .run("2026-09-08T10:00:00.000Z", "customer_link");
+    expect(read()).toMatchObject({ active: 0, unsubscribe_source: "customer_link" });
+
+    // The owner restores them: the removal record must not linger, or the list
+    // would keep claiming an active member had been removed.
+    db.conn
+      .prepare(
+        "UPDATE customers SET active = 1, unsubscribed_at = NULL, unsubscribe_source = NULL"
+      )
+      .run();
+    expect(read()).toMatchObject({ active: 1, unsubscribed_at: null, unsubscribe_source: null });
+  });
+});

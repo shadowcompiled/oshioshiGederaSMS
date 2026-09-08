@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getBirthMonth, toIsraelDateStr, israelToday, isAtLeastAge } from "@/lib/dates";
+import { getBirthMonth, toIsraelDateStr, israelToday, isAtLeastAge, toIsraelDateTimeStr } from "@/lib/dates";
 
 describe("getBirthMonth", () => {
   it("parses ISO YYYY-MM-DD", () => {
@@ -83,5 +83,28 @@ describe("isAtLeastAge", () => {
     expect(isAtLeastAge(null, 18, "2026-08-20")).toBe(false);
     expect(isAtLeastAge("not-a-date", 18, "2026-08-20")).toBe(false);
     expect(isAtLeastAge("2008-02-31", 18, "2026-08-20")).toBe(false); // impossible day
+  });
+});
+
+describe("toIsraelDateTimeStr", () => {
+  it("converts a stored UTC instant to the exact Israel-local time", () => {
+    // 2026-09-08 07:05 UTC is 10:05 in Israel (IDT, UTC+3).
+    expect(toIsraelDateTimeStr("2026-09-08T07:05:00.000Z")).toBe("08/09/2026, 10:05");
+  });
+
+  it("treats a zone-less stored timestamp as UTC, like the date helper does", () => {
+    // Postgres CURRENT_TIMESTAMP / SQLite datetime('now') write no zone.
+    expect(toIsraelDateTimeStr("2026-09-08 07:05:00")).toBe("08/09/2026, 10:05");
+  });
+
+  it("uses winter time when the date falls outside DST", () => {
+    // 2026-01-15 07:05 UTC is 09:05 in Israel (IST, UTC+2).
+    expect(toIsraelDateTimeStr("2026-01-15T07:05:00.000Z")).toBe("15/01/2026, 09:05");
+  });
+
+  it("returns null for empty or unparseable values", () => {
+    expect(toIsraelDateTimeStr(null)).toBeNull();
+    expect(toIsraelDateTimeStr("")).toBeNull();
+    expect(toIsraelDateTimeStr("not a date")).toBeNull();
   });
 });

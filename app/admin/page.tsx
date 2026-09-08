@@ -4,7 +4,7 @@ import Link from "next/link";
 import { getAdminSession } from "@/lib/auth";
 import { createImportToken } from "@/lib/security";
 import { getDb, queryCustomers, mapRow, initDb, type CustomerRow } from "@/lib/db";
-import { israelToday, toIsraelDateStr } from "@/lib/dates";
+import { israelToday, toIsraelDateStr, toIsraelDateTimeStr } from "@/lib/dates";
 import { computeKpis } from "@/lib/kpis";
 import { canReceiveSmsReplies } from "@/lib/sms";
 import { getUnsubscribeKeyword } from "@/lib/unsubscribe";
@@ -24,6 +24,26 @@ const AdminStats = nextDynamic(() => import("./AdminStats"), {
 });
 
 export const dynamic = "force-dynamic";
+
+/**
+ * How this membership ended, in the operator's words. Rows deactivated before
+ * unsubscribe_source existed have no record of who acted, and saying so is
+ * better than guessing — "removed by the owner" about a customer who opted out
+ * themselves would be exactly the wrong answer to give.
+ */
+function removalActor(c: CustomerRow): CustomerView["removedBy"] {
+  if (c.active) return null;
+  switch (c.unsubscribe_source) {
+    case "admin":
+      return "admin";
+    case "customer_link":
+      return "customer_link";
+    case "customer_sms":
+      return "customer_sms";
+    default:
+      return "unknown";
+  }
+}
 
 function formatRegDate(created: string | null): string {
   if (!created) return "-";
@@ -53,7 +73,7 @@ export default async function AdminPage({
     const db = getDb();
     const rows = await queryCustomers(
       db,
-      "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at, received_message_at, unsubscribed_at FROM customers ORDER BY active DESC, name ASC",
+      "SELECT phone, name, email, date_of_birth, wedding_day, city, active, created_at, received_message_at, unsubscribed_at, unsubscribe_source FROM customers ORDER BY active DESC, name ASC",
       []
     );
     if (db.type === "sqlite") db.conn.close();
@@ -106,6 +126,11 @@ export default async function AdminPage({
     city: c.city,
     active: c.active,
     regDate: formatRegDate(c.created_at),
+    // Exact Israel-local instants, formatted on the server so every operator
+    // sees the restaurant's clock rather than their own device's.
+    joinedAt: toIsraelDateTimeStr(c.created_at),
+    removedAt: toIsraelDateTimeStr(c.unsubscribed_at),
+    removedBy: removalActor(c),
     isNew: c.active && !c.received_message_at,
   }));
 

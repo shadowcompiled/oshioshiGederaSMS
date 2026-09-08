@@ -26,7 +26,7 @@ export default async function UnsubscribePage({
   }
 
   try {
-    await deactivateByPhone(withPlus);
+    await deactivateByPhone(withPlus, "customer_link");
   } catch (e) {
     console.error("Unsubscribe error:", e);
   }

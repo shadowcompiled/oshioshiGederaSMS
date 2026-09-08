@@ -1111,6 +1111,19 @@ a {
   /* The whole sentence is the label, so give the tap area some vertical room
      without making the text block feel loose. */
   padding: 4px 0;
+  /* The entire paragraph is the label, which makes it a big, easy tap target —
+     but it also meant a tap, and especially a double tap or a drag, selected
+     and highlighted the whole block of legal text instead of just ticking the
+     box. Suppressing selection on the label keeps the large hit area without
+     that. The same wording stays fully selectable on /terms, and the link
+     inside is exempted below so it can still be copied. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.consent-label a {
+  -webkit-user-select: text;
+  user-select: text;
 }
 .consent-label input[type="checkbox"] {
   margin-top: 2px;
@@ -2835,4 +2848,85 @@ body:has(.sheet)::before {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 18px;
+}
+
+/* Date entered as day / month / year dropdowns (app/DateField.tsx). Ordered
+   dd - mm - yyyy in the source; the RTL container lays them out right-to-left,
+   which is the reading order an Israeli customer expects. */
+.date-field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+
+.date-field {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.date-part {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1 1 4.5rem;
+  min-width: 0;
+}
+
+/* The month name is the longest of the three, so let it take the slack. */
+.date-part-month {
+  flex: 1.5 1 7rem;
+}
+
+.date-part label {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  opacity: 0.75;
+  margin: 0;
+}
+
+.date-part select {
+  width: 100%;
+  /* 44px keeps every one of these a comfortable touch target. */
+  min-height: 44px;
+  margin: 0;
+}
+
+/* City combobox over every locality in Israel (app/CityField.tsx). */
+.city-field {
+  position: relative;
+}
+
+.city-options {
+  position: absolute;
+  z-index: 20;
+  inset-inline: 0;
+  top: 100%;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 15rem;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  background: var(--surface-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  text-align: start;
+}
+
+.city-options li {
+  padding: 10px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9375rem;
+  /* Dragging across the menu should not paint a text selection over it. */
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.city-options li[data-active="true"] {
+  background: var(--accent);
+  color: var(--on-accent);
+  font-weight: 600;
 }

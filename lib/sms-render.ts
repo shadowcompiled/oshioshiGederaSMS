@@ -2,7 +2,7 @@ import { generateSecureToken } from "@/lib/security";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { getUnsubscribeKeyword } from "@/lib/unsubscribe";
 import { canReceiveSmsReplies } from "@/lib/sms";
-import { unsubscribeUrl, withUnsubFooter, type FooterOptions } from "@/lib/sms-footer";
+import { unsubscribeUrl, withUnsubFooter, withRtlMark, type FooterOptions } from "@/lib/sms-footer";
 
 /**
  * Renders the exact text a promotional SMS will carry, for both the sender and
@@ -48,5 +48,8 @@ export function renderBroadcastSms(
   const baseUrl = getPublicAppUrl() || fallbackOrigin;
   const unsubLink = unsubscribeUrl(baseUrl, phone, generateSecureToken(phone));
   const footer = currentFooterOptions();
-  return { text: withUnsubFooter(message, unsubLink, footer), unsubLink, footer };
+  // The RTL mark goes on the finished text, so the preview counts the same
+  // character the handset receives.
+  const text = withRtlMark(withUnsubFooter(message, unsubLink, footer));
+  return { text, unsubLink, footer };
 }

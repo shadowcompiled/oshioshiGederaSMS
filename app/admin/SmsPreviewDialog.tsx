@@ -150,12 +150,12 @@ export default function SmsPreviewDialog({ preview, sending, onConfirm, onCancel
             <dd>{preview.units}</dd>
           </div>
           <div>
-            <dt>מקטעי SMS</dt>
+            <dt>הודעות לחיוב לנמען</dt>
             <dd>{preview.segments}</dd>
           </div>
           {!isTest && (
             <div>
-              <dt>סה"כ הודעות לחיוב</dt>
+              <dt>סה"כ הודעות</dt>
               <dd>{preview.audience.totalSegments}</dd>
             </div>
           )}

@@ -130,7 +130,8 @@ describe("test-send preview", () => {
     const { p } = await preview({ message: "מבצע 1+1", mode: "test", phone: "0501234567" });
     expect(p.exactRecipient).toBe(true);
     expect(p.recipient).toBe("+972501234567");
-    expect(p.text.startsWith("מבצע 1+1")).toBe(true);
+    // The leading character is the invisible RTL mark the handset needs.
+    expect(p.text.replace("‏", "").startsWith("מבצע 1+1")).toBe(true);
     expect(p.text).toContain("להסרה:");
     expect(p.text).toContain("https://club.test/unsubscribe/972501234567?token=");
     expect(p.audience.mode).toBe("test");
@@ -191,11 +192,20 @@ describe("broadcast preview", () => {
     expect(p.blocking).toContain("QSTASH_TOKEN");
   });
 
-  it("warns once the message splits into 3 or more segments", async () => {
+  it("does not cry wolf over a message that still fits one billed unit", async () => {
     audienceRows = [{ phone: "+9725011" }];
-    const { p } = await preview({ message: "א".repeat(200), mode: "broadcast" });
-    expect(p.segments).toBeGreaterThanOrEqual(3);
-    expect(p.notes.some((n: { text: string }) => n.text.includes("מקטעי SMS"))).toBe(true);
+    // 60 chars plus the ~115-char footer is under the 202-character billing
+    // unit, so this is one message and deserves no warning.
+    const { p } = await preview({ message: "א".repeat(60), mode: "broadcast" });
+    expect(p.segments).toBe(1);
+    expect(p.notes.some((n: { text: string }) => n.text.includes("מחויבת"))).toBe(false);
+  });
+
+  it("warns once the message costs more than one billed message", async () => {
+    audienceRows = [{ phone: "+9725011" }];
+    const { p } = await preview({ message: "א".repeat(400), mode: "broadcast" });
+    expect(p.segments).toBeGreaterThanOrEqual(2);
+    expect(p.notes.some((n: { text: string }) => n.text.includes("מחויבת"))).toBe(true);
   });
 });
 
