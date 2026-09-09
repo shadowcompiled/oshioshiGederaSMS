@@ -6,7 +6,7 @@
 export const BRAND = "Oshi Oshi Gedera";
 
 export function welcomeSms(name: string): string {
-  return `${BRAND}: היי ${name}, איזה כיף שהצטרפת אלינו! 🍣 מחכה לך מתנת הצטרפות במסעדה החל ממחר, ומעכשיו המבצעים, ההטבות וה-1+1 מגיעים ישירות אליך.`;
+  return `${BRAND}: היי ${name}, איזה כיף שהצטרפת אלינו! 🍣 מחכה לך מתנת הצטרפות במסעדה החל מההזמנה הבאה, ומעכשיו המבצעים, ההטבות וה-1+1 מגיעים ישירות אליך.`;
 }
 
 export function welcomeBackSms(name: string): string {

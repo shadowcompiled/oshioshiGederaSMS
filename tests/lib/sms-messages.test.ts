@@ -14,7 +14,11 @@ describe("sms messages", () => {
   });
   it("welcome message mentions the joining gift starting tomorrow", () => {
     expect(welcomeSms("דנה")).toContain("מתנת הצטרפות");
-    expect(welcomeSms("דנה")).toContain("החל ממחר");
+    // The joining gift is issued with valid_from = tomorrow (lib/gifts.ts), so
+    // this wording promises the next order rather than the current one — which
+    // is the rule that date is there to enforce.
+    expect(welcomeSms("דנה")).toContain("החל מההזמנה הבאה");
+    expect(welcomeSms("דנה")).not.toContain("מחר");
   });
   // Re-subscribers already used (or still hold) their joining gift — the
   // welcome-back message must not promise a new one.
