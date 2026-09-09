@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 
 export default async function WaiterPage() {
   const role = await getSessionRole();
-  if (role !== "waiter" && role !== "admin") redirect("/login");
+  if (role !== "waiter" && role !== "admin") redirect("/login?next=%2Fwaiter");
 
   // Loaded server-side so the table is populated on first paint and searching
   // is a pure in-browser filter — no request per keystroke.

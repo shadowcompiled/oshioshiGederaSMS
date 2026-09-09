@@ -17,8 +17,40 @@ export type CustomerView = {
   city: string;
   active: boolean;
   regDate: string; // pre-formatted YYYY-MM-DD or "-"
-  isNew: boolean; // active and never messaged
+  /** Exact Israel-local join time, pre-formatted on the server. */
+  joinedAt: string | null;
+  /** Exact Israel-local removal time, or null while still a member. */
+  removedAt: string | null;
+  /** Who ended it. "unknown" covers rows removed before this was recorded. */
+  removedBy: "admin" | "customer_link" | "customer_sms" | "unknown" | null;
 };
+
+const REMOVED_BY_LABEL: Record<
+  NonNullable<CustomerView["removedBy"]>,
+  string
+> = {
+  admin: "הוסר/ה על ידי המסעדה",
+  customer_link: "ביקש/ה להסיר עצמו/ה (קישור)",
+  customer_sms: "ביקש/ה להסיר עצמו/ה (SMS)",
+  unknown: "לא תועד מי ביצע את ההסרה",
+};
+
+/** The removal line: exact time plus who acted, for one customer. */
+function RemovalCell({ c }: { c: CustomerView }) {
+  if (c.active) return <span style={{ opacity: 0.5 }}>-</span>;
+  const label = c.removedBy ? REMOVED_BY_LABEL[c.removedBy] : null;
+  return (
+    <span>
+      <bdi>{c.removedAt ?? "מועד לא ידוע"}</bdi>
+      {label && (
+        <>
+          <br />
+          <span style={{ opacity: 0.75 }}>{label}</span>
+        </>
+      )}
+    </span>
+  );
+}
 
 type Props = { customers: CustomerView[]; importToken: string };
 
@@ -71,7 +103,6 @@ function StatusBadges({ c }: { c: CustomerView }) {
   return (
     <span style={{ display: "inline-flex", gap: "6px", flexWrap: "wrap" }}>
       {c.active ? <span className="badge badge-active">פעיל</span> : <span className="badge badge-removed">הוסר</span>}
-      {c.isNew && <span className="badge badge-new">חדש</span>}
     </span>
   );
 }
@@ -137,7 +168,7 @@ export default function CustomerTable({ customers, importToken }: Props) {
       >
         <table className="admin-table">
           <caption className="sr-only">
-            רשימת לקוחות המועדון — שם, פרטי קשר, תאריכים, סטטוס ופעולות
+            רשימת לקוחות המועדון — שם, פרטי קשר, מועדי הרשמה והסרה, סטטוס ופעולות
           </caption>
           <thead style={{ background: "#f5f5f5" }}>
             <tr style={{ borderBottom: "2px solid #d32f2f" }}>
@@ -160,7 +191,10 @@ export default function CustomerTable({ customers, importToken }: Props) {
                 עיר
               </th>
               <th scope="col" style={TH_CENTER}>
-                תאריך רישום
+                מועד הרשמה
+              </th>
+              <th scope="col" style={TH_CENTER}>
+                מועד הסרה
               </th>
               <th scope="col" style={TH_CENTER}>
                 סטטוס
@@ -173,7 +207,7 @@ export default function CustomerTable({ customers, importToken }: Props) {
           <tbody>
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={9} style={{ padding: "20px", textAlign: "center", color: "#5f5a55" }}>
+                <td colSpan={10} style={{ padding: "20px", textAlign: "center", color: "#5f5a55" }}>
                   {emptyMessage}
                 </td>
               </tr>
@@ -191,7 +225,12 @@ export default function CustomerTable({ customers, importToken }: Props) {
                 <td style={{ ...TH_CENTER, fontSize: "0.75rem" }}>{c.date_of_birth || "-"}</td>
                 <td style={{ ...TH_CENTER, fontSize: "0.75rem" }}>{c.wedding_day || "-"}</td>
                 <td style={{ ...TH, fontSize: "0.75rem" }}>{c.city || "-"}</td>
-                <td style={{ ...TH_CENTER, fontSize: "0.75rem" }}>{c.regDate}</td>
+                <td style={{ ...TH_CENTER, fontSize: "0.75rem" }}>
+                  <bdi>{c.joinedAt ?? c.regDate}</bdi>
+                </td>
+                <td style={{ ...TH_CENTER, fontSize: "0.75rem", minWidth: "9rem" }}>
+                  <RemovalCell c={c} />
+                </td>
                 <td style={TH_CENTER}>
                   <StatusBadges c={c} />
                 </td>
@@ -222,7 +261,15 @@ export default function CustomerTable({ customers, importToken }: Props) {
               </a>
               {c.city ? ` · ${c.city}` : ""}
             </p>
-            <p className="customer-card-line">נרשם/ה {c.regDate}</p>
+            <p className="customer-card-line">
+              נרשם/ה <bdi>{c.joinedAt ?? c.regDate}</bdi>
+            </p>
+            {!c.active && (
+              <p className="customer-card-line">
+                הוסר/ה <bdi>{c.removedAt ?? "במועד לא ידוע"}</bdi>
+                {c.removedBy ? ` · ${REMOVED_BY_LABEL[c.removedBy]}` : ""}
+              </p>
+            )}
             <details>
               <summary>פרטים נוספים</summary>
               <p className="customer-card-line">דוא&quot;ל: {c.email || "-"}</p>

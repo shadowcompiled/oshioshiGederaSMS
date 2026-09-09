@@ -42,6 +42,13 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
    | `ANDROID_SMS_GATEWAY_LOGIN` | Yes* | SMS gateway login |
    | `ANDROID_SMS_GATEWAY_PASSWORD` | Yes* | SMS gateway password |
    | `ANDROID_SMS_GATEWAY_API_URL` | No | Default: `https://api.sms-gate.app/3rdparty/v1` |
+   | `SMS_PROVIDER` | No | Active SMS provider: `android_gateway` (default), `019`, or `mock`. See [SMS providers & safety](#sms-providers--safety). |
+   | `SMS_FALLBACK_PROVIDER` | No | Second provider tried when the first fails (production only). |
+   | `SMS_SENDER_ID` | No | Alphanumeric sender name (≤11 chars, English letters/digits) for providers that support it (019). |
+   | `SMS_019_TOKEN` / `SMS_019_USERNAME` | No* | 019 (Telzar) API credentials — required when `SMS_PROVIDER=019`. |
+   | `SMS_019_SOURCE` / `SMS_019_API_URL` | No | 019 sender override / API URL override (point at `https://019sms.co.il/api/test` for validation-only smoke tests). |
+   | `SMS_ALLOW_REAL_SMS` | No | `true` allows real sends **outside production** (dev/preview). Requires `SMS_TEST_ALLOWLIST`. |
+   | `SMS_TEST_ALLOWLIST` | No | Comma-separated numbers you own; outside production, real sends to anything else are refused. |
    | `QSTASH_TOKEN` | Yes* | Upstash QStash token for broadcast/birthday SMS queue |
    | `QSTASH_URL` | No | Only for QStash EU region (e.g. `https://eu1-xxxx.upstash.io`). Default: global host. |
    | `UPSTASH_REDIS_REST_URL` | No* | Upstash Redis REST URL for distributed rate limiting. |
@@ -66,6 +73,50 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
 
 6. **Static assets**: Commit the `public/` folder (logo and hero images) so they are deployed. The app expects `logo.png` in `public/` and `bg1.jpg`–`bg7.jpg` in `public/hero/` (generated from raw originals by `node scripts/optimize-heroes.mjs`; the raw sources live only in git history).
 
+## SMS providers & safety
+
+All outbound SMS goes through one registry, [lib/sms](lib/sms/index.ts). A provider is an adapter in `lib/sms/providers/` implementing `SmsProvider` (`isConfigured()` + `send()`); `SMS_PROVIDER` selects the active one:
+
+- **`android_gateway`** (default) — the Android SMS Gateway app; sender is the SIM's phone number.
+- **`019`** — Telzar 019; sends under an alphanumeric name (≤11 characters of English letters, digits or spaces — `OSHI GEDERA` is 11 counting the space, and 019 accepts it). Requires `SMS_019_TOKEN` + `SMS_019_USERNAME`. The sender is `SMS_019_SOURCE`, which takes precedence over the shared `SMS_SENDER_ID`; that precedence is the adapter's alone, because `sendSms` deliberately passes no sender of its own — otherwise the send and `canReceiveSmsReplies()` could pick different sources and the footer would describe a sender that was not used. When the sender is a name rather than a number, recipients can't reply, so the marketing footer automatically drops the reply-keyword instruction and keeps only the unsubscribe link.
+
+To check 019 credentials without delivering anything, POST the adapter's payload to `https://019sms.co.il/api/test` (or point `SMS_019_API_URL` there): it validates token, username, sender and payload shape and returns `{"status":0}` without sending.
+- **`mock`** — records and logs instead of sending. Always successful, never networked.
+
+`SMS_FALLBACK_PROVIDER` optionally names a second provider tried when the first send fails (production only) — e.g. run `SMS_PROVIDER=019` with `SMS_FALLBACK_PROVIDER=android_gateway` during a migration, and roll back by flipping one env var.
+
+**Safety guard** (`lib/sms/index.ts`): a real customer can only be texted from true production.
+
+1. Test runs (vitest) always get the mock provider; nothing overrides this.
+2. Anywhere else that is not production — local dev **and Vercel preview deployments**, which share production env vars — also gets the mock, unless `SMS_ALLOW_REAL_SMS=true` is set deliberately.
+3. Even then, non-production sends are refused unless the destination is listed in `SMS_TEST_ALLOWLIST` (numbers you own). An empty allowlist refuses everything, so a stray broadcast is inert.
+
+## Sending a message: preview, then send
+
+Every send from `/admin` is a two-step action. Pressing a send button only asks
+`POST /api/admin/sms-preview` what would go out; nothing is queued or sent until
+the operator approves what the dialog shows.
+
+The preview renders through [lib/sms-render.ts](lib/sms-render.ts) — the same
+renderer the QStash worker uses — so the approved text is the delivered text,
+opt-out footer included. It reports:
+
+- the full message body with the footer appended, as the handset will show it;
+- character count and SMS segments, plus `segments × recipients` for a broadcast;
+- the active provider, its sender name, and whether it can receive replies;
+- a **blocking reason** when the send cannot work at all — the mock provider is
+  active, a real provider has no credentials, the destination is outside
+  `SMS_TEST_ALLOWLIST`, the audience is empty, or `QSTASH_TOKEN` is missing.
+  A blocked preview disables the confirm button, so the operator learns before
+  pressing send rather than from a message that quietly reaches nobody.
+
+**Test sends** go to a number the operator types (remembered in `localStorage`)
+and bypass the QStash queue. A test message is byte-identical to a broadcast —
+this is asserted directly in [tests/api/send-test.test.ts](tests/api/send-test.test.ts)
+by comparing the outbox entries from both routes. A test send that only reached
+the mock provider deliberately does **not** stamp `received_message_at`, so a
+rehearsal never drops a customer out of the "never messaged" audience.
+
 ## Routes (unchanged logic)
 
 | Path | Description |
@@ -73,7 +124,7 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
 | `/` | VIP signup form (details → SMS code → membership) |
 | `/terms` | Club terms, privacy & SMS consent (draft, pending lawyer review) |
 | `/login` | Admin/waiter login (username field selects which) |
-| `/admin` | Customer list, broadcast SMS, CSV export, block/unblock, permanent delete |
+| `/admin` | Customer list, broadcast SMS (preview + test send), CSV export, block/unblock, permanent delete |
 | `/waiter` | Waiter screen: search customers, view/redeem gifts |
 | `/unsubscribe/[phone]?token=...` | Unsubscribe link from SMS |
 | `POST /api/signup/start` | Validate the form, text a one-time code |
@@ -82,7 +133,9 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
 | `POST /api/login` | Admin/waiter login |
 | `GET /api/logout` | Logout |
 | `GET /api/admin/export-csv` | Export CSV |
+| `POST /api/admin/sms-preview` | Render the exact outgoing message + audience/provider facts (sends nothing) |
 | `POST /api/admin/broadcast` | Queue broadcast SMS via QStash |
+| `POST /api/admin/send-test` | Send one test SMS to a named number (JSON or form) |
 | `GET /api/admin/toggle?phone=&action=block\|unblock` | Block/unblock customer |
 | `POST /api/admin/delete-customer` | Permanently delete one customer and their gifts |
 | `GET /api/admin/force-init` | Recreate `customers` table |

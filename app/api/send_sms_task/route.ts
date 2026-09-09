@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAppSecret, generateSecureToken } from "@/lib/security";
-import { getUnsubscribeKeyword } from "@/lib/unsubscribe";
-import { getPublicAppUrl } from "@/lib/app-url";
+import { getAppSecret } from "@/lib/security";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
-import { sendSmsViaGateway } from "@/lib/sms-gateway";
+import { sendSms } from "@/lib/sms";
+import { renderBroadcastSms } from "@/lib/sms-render";
 import { initDb, getDb, runDb } from "@/lib/db";
 
 export async function POST(req: NextRequest) {
@@ -31,15 +30,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "error", error: "Missing parameters" }, { status: 400 });
   }
 
-  const token = generateSecureToken(phone);
-  const clean = phone.replace("+", "");
-  const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
-  const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
-  const finalMsg = `${message}\n\nלהסרה: השב/י ${getUnsubscribeKeyword()} או לחצ/י כאן: ${unsubLink}`;
+  // One renderer for the delivered text, shared with the admin test-send and
+  // the preview endpoint, so what the operator approves is what ships. It also
+  // decides the footer variant: an alphanumeric sender (e.g. "OshiOshi" via
+  // 019) can't receive replies, so the reply-keyword instruction is only
+  // offered when it would actually work.
+  const { text: finalMsg } = renderBroadcastSms(message, phone, req.nextUrl.origin);
 
-  const result = await sendSmsViaGateway(phone, finalMsg);
+  const result = await sendSms(phone, finalMsg);
   if (!result.ok) {
-    console.error("SMS Gateway Error", result.status ?? "", result.error);
+    console.error("SMS send error", result.status ?? "", result.error);
     return NextResponse.json({ status: "error", error: result.error }, { status: 500 });
   }
 

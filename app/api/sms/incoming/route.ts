@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const rowCount = await deactivateByPhone(sender);
+    const rowCount = await deactivateByPhone(sender, "customer_sms");
     return NextResponse.json({ ok: true, unsubscribed: rowCount > 0 });
   } catch (e) {
     console.error("SMS webhook unsubscribe failed for", sender, e);

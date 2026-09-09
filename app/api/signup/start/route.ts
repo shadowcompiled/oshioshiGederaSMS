@@ -4,7 +4,7 @@ import { parseSubmitFields } from "@/lib/submit-form";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 import { startPhoneVerification } from "@/lib/phone-verification";
-import { isSmsGatewayConfigured, sendSmsViaGateway } from "@/lib/sms-gateway";
+import { isRealSmsConfigured, sendSms } from "@/lib/sms";
 import { verificationSms } from "@/lib/sms-messages";
 import { OTP_LENGTH, OTP_TTL_MS } from "@/lib/otp";
 import { isPhoneVerificationRequired } from "@/lib/features";
@@ -88,16 +88,16 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ ok: true, phone, verificationRequired: false });
       }
 
-      if (!isSmsGatewayConfigured() && process.env.NODE_ENV === "production") {
-        console.error("Signup OTP requested but the SMS gateway is not configured");
+      if (!isRealSmsConfigured() && process.env.NODE_ENV === "production") {
+        console.error("Signup OTP requested but no real SMS provider is configured");
         return fail("sms_unavailable");
       }
 
       const started = await startPhoneVerification(db, phone);
       if (!started.ok) return fail(started.error, { retryAfterSec: started.retryAfterSec });
 
-      if (isSmsGatewayConfigured()) {
-        const sent = await sendSmsViaGateway(
+      if (isRealSmsConfigured()) {
+        const sent = await sendSms(
           phone,
           verificationSms(started.code, Math.floor(OTP_TTL_MS / 60000))
         );
@@ -106,9 +106,10 @@ export async function POST(req: NextRequest) {
           return fail("sms_failed");
         }
       } else {
-        // Local development without a gateway: surface the code so the flow is
-        // testable. Guarded by NODE_ENV, and unreachable in production because
-        // the check above already returned sms_unavailable there.
+        // Local development without real SMS (no provider configured, or the
+        // mock guard is active): surface the code so the flow is testable.
+        // Guarded by NODE_ENV, and unreachable in production because the
+        // check above already returned sms_unavailable there.
         console.warn(`[dev] verification code for ${phone}: ${started.code}`);
         return NextResponse.json({
           ok: true,

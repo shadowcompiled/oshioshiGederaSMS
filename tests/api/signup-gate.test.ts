@@ -16,9 +16,9 @@ vi.mock("next/headers", () => ({
 }));
 
 const sentSms: { phone: string; text: string }[] = [];
-vi.mock("@/lib/sms-gateway", () => ({
-  isSmsGatewayConfigured: () => true,
-  sendSmsViaGateway: async (phone: string, text: string) => {
+vi.mock("@/lib/sms", () => ({
+  isRealSmsConfigured: () => true,
+  sendSms: async (phone: string, text: string) => {
     sentSms.push({ phone, text });
     return { ok: true, body: null };
   },

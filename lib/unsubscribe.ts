@@ -38,12 +38,23 @@ export function verifySmsWebhookSignature(
 }
 
 /**
- * Mark a customer inactive and stamp unsubscribed_at = now. Matches the phone
- * both in +E.164 form and digits-only (to tolerate stored-format differences).
- * Returns the number of rows updated. Shared by the unsubscribe link page and
- * the inbound-SMS webhook.
+ * Who ended a membership. Recorded so the admin list can distinguish a
+ * customer who left from one the owner removed — the two mean very different
+ * things when a number is queried later, and under the spam law the
+ * difference is worth being able to show.
  */
-export async function deactivateByPhone(rawPhone: string): Promise<number> {
+export type UnsubscribeSource = "customer_link" | "customer_sms" | "admin";
+
+/**
+ * Mark a customer inactive, stamping unsubscribed_at = now and who did it.
+ * Matches the phone both in +E.164 form and digits-only (to tolerate
+ * stored-format differences). Returns the number of rows updated. Shared by
+ * the unsubscribe link page and the inbound-SMS webhook.
+ */
+export async function deactivateByPhone(
+  rawPhone: string,
+  source: UnsubscribeSource
+): Promise<number> {
   const clean = String(rawPhone ?? "").replace(/[^\d+]/g, "").slice(0, 20);
   if (!clean.replace("+", "")) return 0;
   const withPlus = clean.startsWith("+") ? clean : "+" + clean;
@@ -58,8 +69,8 @@ export async function deactivateByPhone(rawPhone: string): Promise<number> {
     // same order, correct under Postgres ($n) and the SQLite shim ($n -> ?).
     const { rowCount } = await runDb(
       db,
-      `UPDATE customers SET active = ${activeFalse}, unsubscribed_at = $1 WHERE phone = $2 OR REPLACE(phone, '+', '') = $3`,
-      [now, withPlus, digitsOnly]
+      `UPDATE customers SET active = ${activeFalse}, unsubscribed_at = $1, unsubscribe_source = $2 WHERE phone = $3 OR REPLACE(phone, '+', '') = $4`,
+      [now, source, withPlus, digitsOnly]
     );
     return rowCount;
   } finally {

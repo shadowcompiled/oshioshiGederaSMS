@@ -40,9 +40,11 @@ export async function POST(req: NextRequest) {
   // Placeholders are numbered in textual order ($1, $2, …) with params in the
   // same order, so this is correct under Postgres ($n) and the SQLite shim
   // (which rewrites $n -> ? positionally).
+  // 'admin' on a block is the whole point of the column: the admin list can
+  // then say the owner removed this member, not that they opted out.
   const setClause = activeVal
-    ? "active = $1, unsubscribed_at = NULL, received_message_at = NULL"
-    : "active = $1, unsubscribed_at = $2";
+    ? "active = $1, unsubscribed_at = NULL, received_message_at = NULL, unsubscribe_source = NULL"
+    : "active = $1, unsubscribed_at = $2, unsubscribe_source = 'admin'";
 
   const exactWhereParam = activeVal ? [setVal, formatted] : [setVal, now, formatted];
   const { rowCount } = await runDb(

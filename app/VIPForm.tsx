@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
+import DateField from "./DateField";
+import CityField from "./CityField";
 
 const ERROR_MESSAGES: Record<string, string> = {
   missing: "אנא מלאו את כל שדות החובה",
@@ -41,7 +43,7 @@ function messageFor(error: unknown, fallback: string): string {
   return typeof error === "string" && ERROR_MESSAGES[error] ? ERROR_MESSAGES[error] : fallback;
 }
 
-export default function VIPForm({ unsubKeyword }: { unsubKeyword: string }) {
+export default function VIPForm() {
   const [step, setStep] = useState<Step>("details");
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -51,7 +53,6 @@ export default function VIPForm({ unsubKeyword }: { unsubKeyword: string }) {
   const [resendIn, setResendIn] = useState(0);
 
   const formRef = useRef<HTMLFormElement>(null);
-  const dobRef = useRef<HTMLInputElement>(null);
   const codeRef = useRef<HTMLInputElement>(null);
   const stepHeadingRef = useRef<HTMLHeadingElement>(null);
   // The validated form fields are kept so the final submit re-sends exactly
@@ -61,20 +62,6 @@ export default function VIPForm({ unsubKeyword }: { unsubKeyword: string }) {
   const ids = useId();
   const feedbackId = `${ids}-feedback`;
   const codeHintId = `${ids}-code-hint`;
-
-  // Cap the date picker at the latest 18th-birthday date. Applied after mount
-  // rather than rendered, so a statically-cached page can't ship a stale
-  // boundary and SSR/client markup stays identical. The server re-checks age
-  // regardless — this only saves the customer a pointless round-trip.
-  useEffect(() => {
-    const el = dobRef.current;
-    if (!el) return;
-    const now = new Date();
-    const cutoff = new Date(now.getFullYear() - 18, now.getMonth(), now.getDate());
-    el.max = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(
-      cutoff.getDate()
-    ).padStart(2, "0")}`;
-  }, []);
 
   // Resend cooldown, ticked locally. The server enforces the real one — this
   // just stops the customer tapping a button that is going to be refused.
@@ -340,47 +327,27 @@ export default function VIPForm({ unsubKeyword }: { unsubKeyword: string }) {
             disabled={loading}
           />
         </div>
-        <div className="form-group">
-          <label htmlFor="dob">
-            תאריך לידה <span className="req" aria-hidden="true">*</span>
-            <span className="label-hint">
-              כדי שנדע מתי לשלוח לכם את מתנת יום ההולדת. ההצטרפות מגיל 18.
-            </span>
-          </label>
-          <input
-            type="date"
-            id="dob"
-            name="date_of_birth"
-            required
-            autoComplete="bday"
-            ref={dobRef}
-            disabled={loading}
-          />
-        </div>
-        <div className="form-group">
-          <label htmlFor="wedding">
-            יום נישואין
-            <span className="label-hint">
-              לא חובה. אם תמלאו, תחכה לכם מתנה גם בחודש יום הנישואין.
-            </span>
-          </label>
-          <input type="date" id="wedding" name="wedding_day" disabled={loading} />
-        </div>
-        <div className="form-group">
-          <label htmlFor="city">
-            עיר <span className="req" aria-hidden="true">*</span>
-          </label>
-          <input
-            type="text"
-            id="city"
-            name="city"
-            placeholder="גדרה"
-            maxLength={50}
-            required
-            autoComplete="address-level2"
-            disabled={loading}
-          />
-        </div>
+        {/* Year bounds are computed at render on the client. The server
+            re-checks the age regardless (lib/submit-form.ts fails closed on an
+            unparseable date), so this only spares the customer a round-trip. */}
+        <DateField
+          name="date_of_birth"
+          label="תאריך לידה"
+          hint="כדי שנדע מתי לשלוח לכם את מתנת יום ההולדת. ההצטרפות מגיל 18."
+          required
+          disabled={loading}
+          minYearsAgo={100}
+          maxYearsAgo={18}
+        />
+        <DateField
+          name="wedding_day"
+          label="יום נישואין"
+          hint="לא חובה. אם תמלאו, תחכה לכם מתנה גם בחודש יום הנישואין."
+          disabled={loading}
+          minYearsAgo={80}
+          maxYearsAgo={0}
+        />
+        <CityField name="city" label="עיר" required disabled={loading} />
         <div className="form-group consent-group">
           <label className="consent-label" htmlFor="consent">
             <input type="checkbox" id="consent" name="consent" required disabled={loading} />
@@ -391,8 +358,7 @@ export default function VIPForm({ unsubKeyword }: { unsubKeyword: string }) {
                 תקנון המועדון ומדיניות הפרטיות
                 <span className="sr-only"> (נפתח בחלון חדש)</span>
               </a>
-              . ניתן להסיר את ההסכמה בכל עת, ללא עלות, במענה &quot;{unsubKeyword}&quot; לכל הודעה או
-              בקישור ההסרה שבה.
+              . ניתן להסיר את ההסכמה בכל עת, ללא עלות, בקישור ההסרה שבכל הודעה.
             </span>
           </label>
         </div>

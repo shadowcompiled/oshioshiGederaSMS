@@ -1,15 +1,48 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession, attachSessionCookie } from "@/lib/auth";
-import { verifyImportToken, generateSecureToken } from "@/lib/security";
-import { getPublicAppUrl } from "@/lib/app-url";
-import { formatPhone, isValidPhone } from "@/lib/validation";
+import { verifyImportToken } from "@/lib/security";
+import { parseTestRecipients } from "@/lib/test-recipients";
 import { initDb, getDb, runDb } from "@/lib/db";
+import { sendSms, smsSendability } from "@/lib/sms";
+import { renderBroadcastSms } from "@/lib/sms-render";
 
-const SMS_LOGIN = process.env.ANDROID_SMS_GATEWAY_LOGIN;
-const SMS_PASS = process.env.ANDROID_SMS_GATEWAY_PASSWORD;
-const SMS_URL = (process.env.ANDROID_SMS_GATEWAY_API_URL || "https://api.sms-gate.app/3rdparty/v1").replace(/\/$/, "");
+/**
+ * Send the drafted message to a handful of real numbers — the "does this
+ * actually arrive, and does it look right on a phone?" check.
+ *
+ * Up to the cap in lib/test-recipients.ts per run, so a draft can be checked on more
+ * than one handset at once (an iPhone and an Android render Hebrew and long
+ * links differently, and the owner usually wants a second pair of eyes on the
+ * wording). The cap exists because this endpoint bypasses the QStash queue and
+ * sends inline: it is a rehearsal tool, not a second broadcast path.
+ *
+ * The text is produced by lib/sms-render.ts, the same renderer the QStash
+ * worker uses, so a test is a genuine rehearsal of a broadcast. (It previously
+ * built its own, shorter footer, which meant the test message was not the
+ * message customers got.)
+ *
+ * Responds with JSON when the caller asks for it — the admin composer does, so
+ * a failed test reports inline instead of throwing away the drafted message on
+ * a full-page redirect. The 303 path is kept for a plain form POST.
+ */
 
-async function redirectAdmin(req: NextRequest, msg: string, sessionOk: boolean) {
+const MAX_MESSAGE_LENGTH = 1000;
+
+type Payload = {
+  import_token?: string;
+  /** Preferred: up to four numbers. */
+  phones?: unknown;
+  /** Single-number form, kept for the plain form POST. */
+  phone?: string;
+  message?: string;
+};
+
+function wantsJson(req: NextRequest): boolean {
+  return req.headers.get("accept")?.includes("application/json") ?? false;
+}
+
+async function respond(req: NextRequest, ok: boolean, msg: string, sessionOk: boolean) {
+  if (wantsJson(req)) return NextResponse.json({ ok, msg }, { status: ok ? 200 : 400 });
   const url = new URL("/admin", req.url);
   url.searchParams.set("msg", msg);
   const res = NextResponse.redirect(url, 303);
@@ -17,69 +50,101 @@ async function redirectAdmin(req: NextRequest, msg: string, sessionOk: boolean) 
   return res;
 }
 
-export async function POST(req: NextRequest) {
+async function readPayload(req: NextRequest): Promise<Payload> {
+  if (req.headers.get("content-type")?.includes("application/json")) {
+    return (await req.json().catch(() => ({}))) as Payload;
+  }
   const form = await req.formData();
-  const sessionOk = await getAdminSession();
-  const tokenOk = verifyImportToken((form.get("import_token") as string) ?? null);
-  if (!sessionOk && !tokenOk) return redirectAdmin(req, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.", false);
-
-  const rawPhone = ((form.get("phone") as string) ?? "").trim();
-  const message = ((form.get("message") as string) ?? "").trim();
-
-  if (!message || message.length > 1000) {
-    return redirectAdmin(req, "הודעת הבדיקה חייבת להכיל עד 1000 תווים.", sessionOk);
-  }
-
-  const phone = formatPhone(rawPhone);
-  if (!isValidPhone(phone)) {
-    return redirectAdmin(req, "מספר טלפון לא תקין. נא להזין מספר מלא (למשל 0501234567 או +972501234567).", sessionOk);
-  }
-
-  if (!SMS_LOGIN || !SMS_PASS) {
-    return redirectAdmin(req, "שגיאה: חסר הגדרת שער SMS.", sessionOk);
-  }
-
-  const token = generateSecureToken(phone);
-  const clean = phone.replace("+", "");
-  const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
-  const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
-  const finalMsg = `${message}\n\nלהסרה: ${unsubLink}`;
-
-  const payload = {
-    textMessage: { text: finalMsg },
-    phoneNumbers: [phone],
-    withDeliveryReport: true,
+  const str = (k: string) => {
+    const v = form.get(k);
+    return typeof v === "string" ? v : undefined;
   };
+  return { import_token: str("import_token"), phone: str("phone"), message: str("message") };
+}
 
-  try {
-    const auth = Buffer.from(`${SMS_LOGIN}:${SMS_PASS}`).toString("base64");
-    const res = await fetch(`${SMS_URL}/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000),
-    });
+export async function POST(req: NextRequest) {
+  const payload = await readPayload(req);
+  const sessionOk = await getAdminSession();
+  const tokenOk = verifyImportToken(payload.import_token ?? null);
+  if (!sessionOk && !tokenOk) {
+    return respond(req, false, "הפעולה נכשלה. נא לרענן את הדף ולנסות שוב.", false);
+  }
 
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("SMS Gateway Error (test)", res.status, text);
-      return redirectAdmin(req, "שליחת הודעת הבדיקה נכשלה: " + (text || res.status), sessionOk);
+  const message = (payload.message ?? "").trim();
+  if (!message || message.length > MAX_MESSAGE_LENGTH) {
+    return respond(req, false, `הודעת הבדיקה חייבת להכיל עד ${MAX_MESSAGE_LENGTH} תווים.`, sessionOk);
+  }
+
+  const parsed = parseTestRecipients(payload);
+  if (!parsed.ok) return respond(req, false, parsed.error, sessionOk);
+  const { phones } = parsed;
+
+  // Ask the registry what it would do before asking it to do it, so a blocked
+  // send explains itself instead of returning a generic failure. Checked per
+  // number, because the non-production allowlist is per number.
+  const sender = smsSendability(phones[0]);
+  if (sender.provider !== "mock" && !sender.configured) {
+    return respond(
+      req,
+      false,
+      `שגיאה: שער ה-SMS "${sender.provider}" אינו מוגדר — חסרים פרטי התחברות.`,
+      sessionOk
+    );
+  }
+
+  const sent: string[] = [];
+  const failed: { phone: string; error: string }[] = [];
+
+  for (const phone of phones) {
+    const refusal = smsSendability(phone).refusal;
+    if (refusal) {
+      failed.push({ phone, error: refusal });
+      continue;
     }
+    try {
+      // Rendered per recipient: each one carries their own opt-out link.
+      const { text } = renderBroadcastSms(message, phone, req.nextUrl.origin);
+      const result = await sendSms(phone, text);
+      if (result.ok) sent.push(phone);
+      else {
+        console.error("SMS send error (test)", phone, result.status ?? "", result.error);
+        failed.push({ phone, error: String(result.error || result.status || "שליחה נכשלה") });
+      }
+    } catch (e) {
+      console.error("Send test SMS error:", phone, e);
+      failed.push({ phone, error: e instanceof Error ? e.message : "שגיאה בשליחה" });
+    }
+  }
+
+  // Only messages that really left the building count as "this customer has
+  // been contacted"; a mock send must not change the customer record.
+  if (sender.delivers && sent.length > 0) {
     try {
       await initDb();
       const db = getDb();
       const now = new Date().toISOString();
-      await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
+      for (const phone of sent) {
+        await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
+      }
       if (db.type === "sqlite") db.conn.close();
     } catch (e) {
-      console.error("Failed to set received_message_at (test)", phone, e);
+      console.error("Failed to set received_message_at (test)", e);
     }
-    return redirectAdmin(req, `הודעת בדיקה נשלחה ל־${phone}.`, sessionOk);
-  } catch (e) {
-    console.error("Send test SMS error:", e);
-    return redirectAdmin(req, "שגיאה בשליחת הודעת הבדיקה.", sessionOk);
   }
+
+  if (sent.length === 0) {
+    const detail = failed.map((f) => `${f.phone} — ${f.error}`).join("; ");
+    return respond(req, false, "שליחת הודעת הבדיקה נכשלה: " + detail, sessionOk);
+  }
+
+  const list = sent.join(", ");
+  const okMsg = sender.delivers
+    ? `הודעת בדיקה נשלחה ל־${list}.`
+    : `מצב הדגמה (${sender.provider}): ההודעה נרשמה ביומן השרת ולא נשלחה באמת ל־${list}.`;
+  const partial = failed.length
+    ? ` נכשלו: ${failed.map((f) => `${f.phone} — ${f.error}`).join("; ")}`
+    : "";
+  // A partial failure is not a success: the operator must see which handset
+  // never got the rehearsal.
+  return respond(req, failed.length === 0, okMsg + partial, sessionOk);
 }

@@ -186,6 +186,9 @@ export async function applySchema(db: DbConnection): Promise<void> {
       "ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_at TIMESTAMP",
       "ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_version TEXT",
       "ALTER TABLE customers ADD COLUMN IF NOT EXISTS consent_ip TEXT",
+      // Who ended the membership: "customer_link", "customer_sms" or "admin".
+      // NULL for an active member, and cleared again on reactivation.
+      "ALTER TABLE customers ADD COLUMN IF NOT EXISTS unsubscribe_source TEXT",
     ];
     for (const sql of alters) await db.conn.query(sql).catch(() => {});
     await db.conn.query(giftsSchemaPg);
@@ -199,6 +202,7 @@ export async function applySchema(db: DbConnection): Promise<void> {
       "ALTER TABLE customers ADD COLUMN consent_at TEXT",
       "ALTER TABLE customers ADD COLUMN consent_version TEXT",
       "ALTER TABLE customers ADD COLUMN consent_ip TEXT",
+      "ALTER TABLE customers ADD COLUMN unsubscribe_source TEXT",
     ];
     for (const sql of alters) {
       try {
@@ -233,6 +237,7 @@ export type CustomerRow = {
   consent_at: string | null;
   consent_version: string | null;
   consent_ip: string | null;
+  unsubscribe_source: string | null;
 };
 
 export function mapRow(r: Record<string, unknown>): CustomerRow {
@@ -254,5 +259,6 @@ export function mapRow(r: Record<string, unknown>): CustomerRow {
     consent_at: r.consent_at != null ? String(r.consent_at) : null,
     consent_version: r.consent_version != null ? String(r.consent_version) : null,
     consent_ip: r.consent_ip != null ? String(r.consent_ip) : null,
+    unsubscribe_source: r.unsubscribe_source != null ? String(r.unsubscribe_source) : null,
   };
 }
