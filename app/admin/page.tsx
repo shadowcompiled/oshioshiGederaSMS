@@ -57,8 +57,17 @@ export default async function AdminPage({
 }: {
   searchParams: Promise<{ msg?: string; filter?: string }>;
 }) {
+  const params = await searchParams;
+
   const ok = await getAdminSession();
-  if (!ok) redirect("/login");
+  if (!ok) {
+    // Carry the requested view through the login round-trip, so a session that
+    // lapsed mid-browse does not also lose the filter that was being opened.
+    const query = new URLSearchParams();
+    if (params.filter) query.set("filter", params.filter);
+    const back = "/admin" + (query.size ? `?${query}` : "");
+    redirect(`/login?next=${encodeURIComponent(back)}`);
+  }
 
   let importToken = "";
   try {
@@ -101,21 +110,41 @@ export default async function AdminPage({
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
-  const params = await searchParams;
   const msg = params.msg ?? "";
 
   const isSignupToday = (c: CustomerRow) => toIsraelDateStr(c.created_at) === today;
   const isRemovedToday = (c: CustomerRow) => !c.active && toIsraelDateStr(c.unsubscribed_at) === today;
+  const isRemoved = (c: CustomerRow) => !c.active;
   const signupTodayCount = customers.filter(isSignupToday).length;
   const removedTodayCount = customers.filter(isRemovedToday).length;
+  const removedCount = customers.filter(isRemoved).length;
 
-  const filter = params.filter === "signup_today" || params.filter === "unsub_today" ? params.filter : "";
-  const displayed =
-    filter === "signup_today"
-      ? customers.filter(isSignupToday)
-      : filter === "unsub_today"
-        ? customers.filter(isRemovedToday)
-        : customers;
+  /** Newest first, by a timestamp that may be missing on older rows. */
+  const byNewest = (pick: (c: CustomerRow) => string | null) => (a: CustomerRow, b: CustomerRow) =>
+    String(pick(b) ?? "").localeCompare(String(pick(a) ?? ""));
+
+  /**
+   * The views over the customer list.
+   *
+   * "Today" is a daily-standup question; the history views answer the one that
+   * actually gets asked later — who has ever left, and when. Both histories are
+   * ordered newest first, because a history read from the oldest end is no use.
+   */
+  const VIEWS = {
+    "": { rows: () => customers },
+    signup_today: { rows: () => customers.filter(isSignupToday) },
+    unsub_today: { rows: () => customers.filter(isRemovedToday) },
+    signups: { rows: () => [...customers].sort(byNewest((c) => c.created_at)) },
+    unsubscribed: {
+      rows: () => customers.filter(isRemoved).sort(byNewest((c) => c.unsubscribed_at)),
+    },
+  } as const;
+
+  type ViewKey = keyof typeof VIEWS;
+  const filter: ViewKey = (Object.keys(VIEWS) as ViewKey[]).includes(params.filter as ViewKey)
+    ? (params.filter as ViewKey)
+    : "";
+  const displayed = VIEWS[filter].rows();
 
   const customerViews: CustomerView[] = displayed.map((c) => ({
     phone: c.phone,
@@ -214,7 +243,15 @@ export default async function AdminPage({
               marginBottom: "15px",
             }}
           >
-            רשימת לקוחות ({displayed.length})
+            {filter === "unsubscribed"
+              ? `היסטוריית הסרות (${displayed.length})`
+              : filter === "signups"
+                ? `כל ההרשמות, מהחדש לישן (${displayed.length})`
+                : filter === "signup_today"
+                  ? `נרשמו היום (${displayed.length})`
+                  : filter === "unsub_today"
+                    ? `הוסרו היום (${displayed.length})`
+                    : `רשימת לקוחות (${displayed.length})`}
           </h2>
 
           {/* These links replace the list below them, so they are a navigation
@@ -222,6 +259,16 @@ export default async function AdminPage({
           <nav className="filter-chips" aria-label="סינון רשימת הלקוחות">
             {[
               { key: "", label: `הכל (${customers.length})`, href: "/admin" },
+              {
+                key: "signups",
+                label: `כל ההרשמות (${customers.length})`,
+                href: "/admin?filter=signups",
+              },
+              {
+                key: "unsubscribed",
+                label: `כל ההסרות (${removedCount})`,
+                href: "/admin?filter=unsubscribed",
+              },
               { key: "signup_today", label: `נרשמו היום (${signupTodayCount})`, href: "/admin?filter=signup_today" },
               { key: "unsub_today", label: `הוסרו היום (${removedTodayCount})`, href: "/admin?filter=unsub_today" },
             ].map((f) => (

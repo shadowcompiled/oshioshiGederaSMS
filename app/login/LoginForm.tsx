@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 
-export default function LoginForm() {
+/** `next` has already been validated server-side (safeReturnPath). */
+export default function LoginForm({ next }: { next?: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const passwordRef = useRef<HTMLInputElement>(null);
@@ -28,7 +29,12 @@ export default function LoginForm() {
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok === true) {
         // Session cookie is set by /api/login (Set-Cookie); just navigate.
-        window.location.href = data.role === "waiter" ? "/waiter" : "/admin";
+        // Back to whatever they were opening when the session lapsed, falling
+        // back to the landing page for their role. A waiter must not be sent
+        // to an admin-only destination, so the role still has the final say.
+        const home = data.role === "waiter" ? "/waiter" : "/admin";
+        const target = next && (data.role !== "waiter" || next.startsWith("/waiter")) ? next : home;
+        window.location.href = target;
         return;
       }
       if (res.status === 429 || data.error === "rate") {
