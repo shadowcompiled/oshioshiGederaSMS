@@ -11,8 +11,25 @@ function getSecret(): string {
   return secret;
 }
 
+/**
+ * The opt-out token that goes in every SMS.
+ *
+ * 96 bits of the same HMAC, written in base64url instead of hex: 16 characters
+ * rather than 32, for the same job. Length matters here in a way it rarely
+ * does — this token is printed inside a link in every promotional message, and
+ * SMS is billed by the character.
+ *
+ * 96 bits is far past what this guards. The token only stops one person
+ * unsubscribing another, guessing is an online attack against a rate-limited
+ * endpoint, and the prize for winning is removing someone from a restaurant
+ * mailing list.
+ */
 export function generateSecureToken(phone: string): string {
-  // 128-bit HMAC over the phone, keyed by the app secret.
+  return createHmac("sha256", getSecret()).update(phone).digest("base64url").slice(0, 16);
+}
+
+/** The 128-bit hex token, still honoured: links in already-sent SMS use it. */
+function hexSecureToken(phone: string): string {
   return createHmac("sha256", getSecret()).update(phone).digest("hex").slice(0, 32);
 }
 
@@ -22,8 +39,14 @@ function legacySecureToken(phone: string): string {
   return createHmac("sha256", getSecret()).update(data).digest("hex").slice(0, 16);
 }
 
+/**
+ * Accepts every token form we have ever issued. An opt-out link must keep
+ * working for as long as the message holding it exists on someone's phone —
+ * a customer who saved an SMS from last year and taps "remove me" must not be
+ * met with a redirect to the signup page.
+ */
 export function verifyToken(phone: string, token: string): boolean {
-  const candidates = [generateSecureToken(phone), legacySecureToken(phone)];
+  const candidates = [generateSecureToken(phone), hexSecureToken(phone), legacySecureToken(phone)];
   return candidates.some((expected) => {
     if (expected.length !== token.length) return false;
     try {

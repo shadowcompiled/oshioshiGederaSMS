@@ -59,8 +59,8 @@ describe("estimateUnsubFooterUnits", () => {
   it("matches the worker's footer template with a sample link", () => {
     const units = estimateUnsubFooterUnits("1111", "https://example.vercel.app");
     const expected =
-      "\n\nלהסרה: השב/י 1111 או לחצ/י כאן: https://example.vercel.app/unsubscribe/972501234567?token=" +
-      "x".repeat(32);
+      "\n\nלהסרה: השב/י 1111 או לחצ/י כאן: https://example.vercel.app/u/0501234567/" +
+      "x".repeat(16);
     expect(units).toBe(expected.length);
   });
 

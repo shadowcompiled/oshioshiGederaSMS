@@ -1,5 +1,7 @@
 import { createHmac, timingSafeEqual } from "crypto";
 import { getDb, runDb, initDb } from "@/lib/db";
+import { formatPhone } from "@/lib/validation";
+import { verifyToken } from "@/lib/security";
 
 /**
  * Keyword a customer texts back to unsubscribe (for feature phones that can't
@@ -76,4 +78,47 @@ export async function deactivateByPhone(
   } finally {
     if (db.type === "sqlite") db.conn.close();
   }
+}
+
+/**
+ * Verify an opt-out link and act on it.
+ *
+ * Shared by the short /u/:phone/:token route and the long
+ * /unsubscribe/:phone?token= one. Both must behave identically: the long form
+ * is still live because links in messages already sitting on customers' phones
+ * have to keep working, and an opt-out that quietly stopped working would be
+ * both a broken promise and a spam-law problem.
+ *
+ * The number in the link may be local (05X, the short form) or international
+ * (972…, the old form); the token was always signed over the canonical +972
+ * value, so that is what the candidates below are checked against first.
+ */
+export async function applyUnsubscribeLink(
+  phoneParam: string,
+  token: string | undefined | null
+): Promise<boolean> {
+  if (!token) return false;
+
+  const clean = String(phoneParam ?? "").replace(/[^\d+]/g, "").slice(0, 20);
+  if (!clean.replace("+", "")) return false;
+
+  const canonical = formatPhone(clean);
+  const withPlus = clean.startsWith("+") ? clean : "+" + clean;
+  const digitsOnly = clean.replace("+", "");
+
+  // Several spellings of the same number: the canonical form is what tokens are
+  // signed over today, the other two keep older links verifying.
+  const verified = [canonical, withPlus, digitsOnly].some(
+    (candidate) => candidate && verifyToken(candidate, token)
+  );
+  if (!verified) return false;
+
+  try {
+    await deactivateByPhone(canonical || withPlus, "customer_link");
+  } catch (e) {
+    // The link was genuine, so tell the customer they are off the list rather
+    // than bouncing them to the signup page; the failure is ours to chase.
+    console.error("Unsubscribe error:", e);
+  }
+  return true;
 }

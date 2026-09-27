@@ -37,9 +37,9 @@ describe("unsubFooter", () => {
 });
 
 describe("unsubscribeUrl", () => {
-  it("strips the + from the recipient and any trailing slash from the base", () => {
+  it("uses the short /u/ path with the local 05X number", () => {
     expect(unsubscribeUrl("https://a.test/", "+972501234567", "tok")).toBe(
-      "https://a.test/unsubscribe/972501234567?token=tok"
+      "https://a.test/u/0501234567/tok"
     );
   });
 });
@@ -59,7 +59,7 @@ describe("renderBroadcastSms", () => {
     vi.stubEnv("APP_URL", "https://club.test");
     const { unsubLink } = renderBroadcastSms("היי", "+972501234567");
     expect(unsubLink).toBe(
-      `https://club.test/unsubscribe/972501234567?token=${generateSecureToken("+972501234567")}`
+      `https://club.test/u/0501234567/${generateSecureToken("+972501234567")}`
     );
   });
 
@@ -75,7 +75,7 @@ describe("renderBroadcastSms", () => {
     vi.stubEnv("VERCEL_PROJECT_PRODUCTION_URL", "");
     vi.stubEnv("VERCEL_URL", "");
     expect(renderBroadcastSms("היי", "+972501234567", "https://origin.test").unsubLink).toContain(
-      "https://origin.test/unsubscribe/"
+      "https://origin.test/u/"
     );
   });
 

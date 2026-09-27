@@ -27,11 +27,25 @@ export type FooterOptions = {
   keyword: string;
 };
 
-/** A recipient's own one-click opt-out link. */
+/**
+ * A recipient's own one-click opt-out link, kept as short as it can be.
+ *
+ * Every character here is printed in every promotional SMS, so the shape is
+ * deliberate: "/u/" rather than "/unsubscribe/", the token as a path segment
+ * rather than "?token=", and the number in local 05X form rather than with the
+ * 972 country code. With the 16-character token that is 68 characters instead
+ * of the 102 this used to produce.
+ *
+ * The long form still resolves — see app/unsubscribe/[phone] — because links
+ * in messages already sitting on customers' phones must keep working.
+ */
 export function unsubscribeUrl(baseUrl: string, phone: string, token: string): string {
   const digits = String(phone ?? "").replace(/\D/g, "");
+  // 972XXXXXXXXX -> 0XXXXXXXXX. Anything else is passed through as digits, so a
+  // non-Israeli number still produces a link that resolves.
+  const local = digits.startsWith("972") ? "0" + digits.slice(3) : digits;
   const base = String(baseUrl ?? "").replace(/\/+$/, "");
-  return `${base}/unsubscribe/${digits}?token=${token}`;
+  return `${base}/u/${local}/${token}`;
 }
 
 /** The footer exactly as it is appended, leading blank line included. */

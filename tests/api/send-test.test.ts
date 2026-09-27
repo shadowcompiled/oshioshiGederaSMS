@@ -111,7 +111,7 @@ describe("the test message is the real message", () => {
       testSendReq({ import_token: createImportToken(), phone: "0501234567", message: "היי" })
     );
     expect(mockSmsOutbox[0].text).toContain("להסרה:");
-    expect(mockSmsOutbox[0].text).toContain("https://club.test/unsubscribe/972501234567?token=");
+    expect(mockSmsOutbox[0].text).toContain("https://club.test/u/0501234567/");
   });
 });
 
@@ -204,7 +204,7 @@ describe("multiple test recipients", () => {
       "+972533333333",
     ]);
     // Same wording for everyone, but the link is personal to each number.
-    const links = mockSmsOutbox.map((m) => m.text.match(/unsubscribe\/(\d+)\?token=(\w+)/)![0]);
+    const links = mockSmsOutbox.map((m) => m.text.match(/\/u\/(\d+)\/([\w-]+)/)![0]);
     expect(new Set(links).size).toBe(3);
   });
 

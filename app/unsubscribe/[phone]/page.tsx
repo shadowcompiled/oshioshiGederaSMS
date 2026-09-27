@@ -1,8 +1,16 @@
 import { redirect } from "next/navigation";
-import { verifyToken } from "@/lib/security";
-import { deactivateByPhone } from "@/lib/unsubscribe";
-import Logo from "@/app/Logo";
+import { applyUnsubscribeLink } from "@/lib/unsubscribe";
+import UnsubscribedNotice from "@/app/unsubscribe/UnsubscribedNotice";
 
+/**
+ * The original, long opt-out link: /unsubscribe/972501234567?token=<32 hex>.
+ *
+ * New messages carry the short /u/:phone/:token form instead, but this route
+ * must stay: every SMS already delivered contains a link in this shape, and an
+ * opt-out that stopped working would be a broken promise to the customer and a
+ * spam-law problem for the club. lib/security.ts likewise still honours the
+ * older token formats.
+ */
 export const dynamic = "force-dynamic";
 
 export default async function UnsubscribePage({
@@ -12,38 +20,8 @@ export default async function UnsubscribePage({
   params: Promise<{ phone: string }>;
   searchParams: Promise<{ token?: string }>;
 }) {
-  const { phone: phoneParam } = await params;
+  const { phone } = await params;
   const { token } = await searchParams;
-
-  if (!token) redirect("/");
-
-  const clean = phoneParam.replace(/[^\d+]/g, "").slice(0, 20);
-  const withPlus = clean.startsWith("+") ? clean : "+" + clean;
-  const digitsOnly = clean.replace("+", "");
-
-  if (!verifyToken(withPlus, token) && !verifyToken(digitsOnly, token)) {
-    redirect("/");
-  }
-
-  try {
-    await deactivateByPhone(withPlus, "customer_link");
-  } catch (e) {
-    console.error("Unsubscribe error:", e);
-  }
-
-  return (
-    <main className="sheet sheet-narrow" id="main-content">
-      <Logo />
-      <p className="sheet-label">הסרה מהדיוור</p>
-      <h1>הוסרתם מרשימת התפוצה</h1>
-      <p className="sheet-lede">
-        לא נשלח לכם עוד הודעות. אם זו הייתה טעות, אפשר להצטרף שוב בכל רגע.
-      </p>
-      <div className="success-actions">
-        <a className="btn-ghost" href="/">
-          הצטרפות מחדש למועדון
-        </a>
-      </div>
-    </main>
-  );
+  if (!(await applyUnsubscribeLink(phone, token))) redirect("/");
+  return <UnsubscribedNotice />;
 }

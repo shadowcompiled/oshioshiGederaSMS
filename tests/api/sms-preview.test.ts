@@ -133,7 +133,7 @@ describe("test-send preview", () => {
     // The leading character is the invisible RTL mark the handset needs.
     expect(p.text.replace("‏", "").startsWith("מבצע 1+1")).toBe(true);
     expect(p.text).toContain("להסרה:");
-    expect(p.text).toContain("https://club.test/unsubscribe/972501234567?token=");
+    expect(p.text).toContain("https://club.test/u/0501234567/");
     expect(p.audience.mode).toBe("test");
     expect(p.audience.recipients).toBe(1);
   });

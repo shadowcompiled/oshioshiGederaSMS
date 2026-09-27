@@ -1,4 +1,4 @@
-import { unsubFooter } from "@/lib/sms-footer";
+import { unsubFooter, unsubscribeUrl } from "@/lib/sms-footer";
 
 /**
  * How many messages a broadcast is billed for.
@@ -43,7 +43,7 @@ export function smsBilledMessages(text: string): number {
 }
 
 const SAMPLE_PHONE_DIGITS = "972501234567";
-const SAMPLE_TOKEN = "x".repeat(32); // generateSecureToken (lib/security.ts) emits 32 hex chars (.slice(0,32))
+const SAMPLE_TOKEN = "x".repeat(16); // generateSecureToken emits 16 base64url chars
 
 /**
  * Estimated UTF-16 length of the footer the SMS worker appends — the same
@@ -60,6 +60,7 @@ export function estimateUnsubFooterUnits(
   baseUrl = "https://example.vercel.app",
   canReply = true
 ): number {
-  const link = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${SAMPLE_PHONE_DIGITS}?token=${SAMPLE_TOKEN}`;
+  // Built by the real URL builder so the estimate cannot drift from the link.
+  const link = unsubscribeUrl(baseUrl, SAMPLE_PHONE_DIGITS, SAMPLE_TOKEN);
   return unsubFooter(link, { canReply, keyword }).length;
 }
