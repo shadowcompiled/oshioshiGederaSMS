@@ -21,18 +21,22 @@ export function smsSegments(text: string): number {
 }
 
 const SAMPLE_PHONE_DIGITS = "972501234567";
-const SAMPLE_TOKEN = "x".repeat(32); // generateSecureToken (lib/security.ts) emits 32 hex chars (.slice(0,32))
+const SAMPLE_TOKEN = "x".repeat(8); // generateSecureToken (lib/security.ts) emits 8 base62 chars
 
 /**
  * Estimated UTF-16 length of the footer the SMS worker appends
  * (see app/api/send_sms_task/route.ts):
- *   "\n\nלהסרה: השב/י {keyword} או לחצ/י כאן: {link}"
+ *   "\n\nלהסרה ממועדון הלקוחות לחץ כאן: {link}"
  * Token length and recipient number vary by a few chars — treat as ≈.
+ *
+ * The reply-keyword half of the footer was dropped: the 019 Sender-ID the club
+ * sends from is alphanumeric and cannot receive replies, so telling customers
+ * to text back was advertising an opt-out that never arrived. Inbound keyword
+ * handling stays live in /api/sms/incoming for anyone who replies anyway.
  */
 export function estimateUnsubFooterUnits(
-  keyword = "1111",
   baseUrl = "https://example.vercel.app"
 ): number {
   const link = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${SAMPLE_PHONE_DIGITS}?token=${SAMPLE_TOKEN}`;
-  return `\n\nלהסרה: השב/י ${keyword} או לחצ/י כאן: ${link}`.length;
+  return `\n\nלהסרה ממועדון הלקוחות לחץ כאן: ${link}`.length;
 }

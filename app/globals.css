@@ -514,6 +514,17 @@ a {
   margin-top: 16px;
 }
 
+/* The unsubscribe yes/no pair. The base `button` rule is width:100% with a top
+   margin — correct for a form's single submit, wrong here, where it would push
+   the "stay" link onto its own line and sit 12px lower than it. */
+.confirm-actions button {
+  width: auto;
+  margin-top: 0;
+  min-height: 44px;
+  padding: 12px 18px;
+  font-size: 0.875rem;
+}
+
 /* â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Mobile (landing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */
 @media (max-width: 600px) {
   body {

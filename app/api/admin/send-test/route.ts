@@ -43,7 +43,7 @@ export async function POST(req: NextRequest) {
   const clean = phone.replace("+", "");
   const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
   const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
-  const finalMsg = `${message}\n\nלהסרה: ${unsubLink}`;
+  const finalMsg = `${message}\n\nלהסרה ממועדון הלקוחות לחץ כאן: ${unsubLink}`;
 
   const payload = {
     textMessage: { text: finalMsg },

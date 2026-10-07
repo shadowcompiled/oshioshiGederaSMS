@@ -12,9 +12,9 @@ describe("sms messages", () => {
       expect(msg).toContain("דנה");
     }
   });
-  it("welcome message mentions the joining gift starting tomorrow", () => {
+  it("welcome message mentions the joining gift starting from the next order", () => {
     expect(welcomeSms("דנה")).toContain("מתנת הצטרפות");
-    expect(welcomeSms("דנה")).toContain("החל ממחר");
+    expect(welcomeSms("דנה")).toContain("מההזמנה הבאה");
   });
   // Re-subscribers already used (or still hold) their joining gift — the
   // welcome-back message must not promise a new one.
