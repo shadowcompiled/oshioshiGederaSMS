@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "crypto";
-import { getDb, runDb, initDb } from "@/lib/db";
+import { getDb, runDb, initDb, queryCustomers } from "@/lib/db";
+import { recordUnsubscribe } from "@/lib/unsubscribe-report";
 
 /**
  * Keyword a customer texts back to unsubscribe (for feature phones that can't
@@ -42,8 +43,11 @@ export function verifySmsWebhookSignature(
  * both in +E.164 form and digits-only (to tolerate stored-format differences).
  * Returns the number of rows updated. Shared by the unsubscribe link page and
  * the inbound-SMS webhook.
+ *
+ * Members who were still active get a row in unsubscribe_events for the
+ * admin opt-out chart; a repeat click from someone already out does not.
  */
-export async function deactivateByPhone(rawPhone: string): Promise<number> {
+export async function deactivateByPhone(rawPhone: string, source: "link" | "reply"): Promise<number> {
   const clean = String(rawPhone ?? "").replace(/[^\d+]/g, "").slice(0, 20);
   if (!clean.replace("+", "")) return 0;
   const withPlus = clean.startsWith("+") ? clean : "+" + clean;
@@ -54,6 +58,12 @@ export async function deactivateByPhone(rawPhone: string): Promise<number> {
   try {
     const now = new Date().toISOString();
     const activeFalse = db.type === "postgres" ? "FALSE" : "0";
+    const activeTrue = db.type === "postgres" ? "TRUE" : "1";
+    const leaving = await queryCustomers(
+      db,
+      `SELECT phone FROM customers WHERE (phone = $1 OR REPLACE(phone, '+', '') = $2) AND active = ${activeTrue}`,
+      [withPlus, digitsOnly]
+    );
     // Placeholders numbered in textual order ($1, $2, $3) with params in the
     // same order, correct under Postgres ($n) and the SQLite shim ($n -> ?).
     const { rowCount } = await runDb(
@@ -61,6 +71,14 @@ export async function deactivateByPhone(rawPhone: string): Promise<number> {
       `UPDATE customers SET active = ${activeFalse}, unsubscribed_at = $1 WHERE phone = $2 OR REPLACE(phone, '+', '') = $3`,
       [now, withPlus, digitsOnly]
     );
+    for (const row of leaving) {
+      try {
+        await recordUnsubscribe(db, String(row.phone), now, source);
+      } catch (e) {
+        // The opt-out itself has landed; a missing chart row must not undo it.
+        console.error("Failed to log unsubscribe event", row.phone, e);
+      }
+    }
     return rowCount;
   } finally {
     if (db.type === "sqlite") db.conn.close();

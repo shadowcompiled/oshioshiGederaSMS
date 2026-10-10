@@ -3,9 +3,10 @@ import nextDynamic from "next/dynamic";
 import Link from "next/link";
 import { getAdminSession } from "@/lib/auth";
 import { createImportToken } from "@/lib/security";
-import { getDb, queryCustomers, mapRow, initDb, type CustomerRow } from "@/lib/db";
+import { getDb, withDb, queryCustomers, mapRow, initDb, type CustomerRow } from "@/lib/db";
 import { israelToday, toIsraelDateStr } from "@/lib/dates";
 import { computeKpis } from "@/lib/kpis";
+import { loadUnsubscribeDays, type UnsubscribeDay } from "@/lib/unsubscribe-report";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
 import ResetDbForm from "./ResetDbForm";
@@ -19,6 +20,8 @@ const AdminStats = nextDynamic(() => import("./AdminStats"), {
     </div>
   ),
 });
+
+const UnsubscribeChart = nextDynamic(() => import("./UnsubscribeChart"), { ssr: true });
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +48,7 @@ export default async function AdminPage({
   }
 
   let customers: CustomerRow[] = [];
+  let unsubscribeDays: UnsubscribeDay[] = [];
   try {
     await initDb();
     const db = getDb();
@@ -58,6 +62,14 @@ export default async function AdminPage({
   } catch (e) {
     console.error("Admin page DB error:", e);
     redirect("/login?error=system");
+  }
+
+  // Separate from the query above: a failing chart should cost the chart,
+  // not the whole admin page.
+  try {
+    unsubscribeDays = await withDb((db) => loadUnsubscribeDays(db, israelToday()));
+  } catch (e) {
+    console.error("Unsubscribe chart DB error:", e);
   }
 
   const today = israelToday();
@@ -168,6 +180,8 @@ export default async function AdminPage({
         </section>
 
         <AdminStats signupsByDate={signupsByDate} cityCounts={cityCounts} />
+
+        <UnsubscribeChart days={unsubscribeDays} />
 
         <section aria-labelledby="customers-heading">
           <h2

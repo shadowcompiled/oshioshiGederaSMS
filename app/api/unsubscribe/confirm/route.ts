@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
   if (!verifyToken(withPlus, token) && !verifyToken(digitsOnly, token)) return home();
 
   try {
-    await deactivateByPhone(withPlus);
+    await deactivateByPhone(withPlus, "link");
   } catch (e) {
     console.error("Unsubscribe error:", e);
   }

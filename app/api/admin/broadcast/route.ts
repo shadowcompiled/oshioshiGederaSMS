@@ -6,6 +6,7 @@ import { getAppSecret } from "@/lib/security";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 import { resolveAppBaseUrl, publishSmsTask } from "@/lib/qstash";
+import { recordBroadcast } from "@/lib/unsubscribe-report";
 
 const QSTASH_TOKEN = process.env.QSTASH_TOKEN;
 
@@ -108,6 +109,16 @@ export async function POST(req: NextRequest) {
         "שליחה לתור נכשלה. בדוק ש-QSTASH_TOKEN תקין ב-Vercel ואת כתובת ה-API. " + (lastError ?? ""),
         sessionOk
       );
+    }
+
+    // Mark the send on the admin opt-out chart. Logging failure must not turn
+    // a broadcast that already went out into a reported error.
+    try {
+      const logDb = getDb();
+      await recordBroadcast(logDb, new Date().toISOString(), onlyNew ? "new_only" : "all", count, message);
+      if (logDb.type === "sqlite") logDb.conn.close();
+    } catch (e) {
+      console.error("Failed to log broadcast", e);
     }
 
     return respond(req, true, `ההודעות נשלחו לתור QStash (${count}/${phones.length} לקוחות).`, sessionOk);
