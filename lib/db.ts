@@ -174,6 +174,37 @@ export async function applySchema(db: DbConnection): Promise<void> {
       updated_at TEXT
     )
   `;
+  // The opt-out chart on the admin page. customers.unsubscribed_at can't power
+  // it: it holds only the latest opt-out, is cleared on re-joining, and admin
+  // blocks stamp it too. So every customer opt-out gets its own row, and every
+  // broadcast is logged so the chart can mark the days a message went out.
+  // Timestamps are UTC ISO TEXT on both engines, as in phone_verifications.
+  const unsubscribeEventsSchema = `
+    CREATE TABLE IF NOT EXISTS unsubscribe_events (
+      phone TEXT NOT NULL,
+      unsubscribed_at TEXT NOT NULL,
+      source TEXT NOT NULL,
+      UNIQUE(phone, unsubscribed_at)
+    )
+  `;
+  const broadcastsSchema = `
+    CREATE TABLE IF NOT EXISTS broadcasts (
+      sent_at TEXT NOT NULL,
+      audience TEXT NOT NULL,
+      recipients INTEGER NOT NULL,
+      message TEXT NOT NULL
+    )
+  `;
+  // One-time seed of the opt-outs recorded before the events table existed.
+  // Guarded by the table being empty, so it runs only on the first init; the
+  // UNIQUE constraint absorbs two cold starts racing through it together.
+  const backfillUnsubscribes = (activeFalse: string, atExpr: string) => `
+    INSERT INTO unsubscribe_events (phone, unsubscribed_at, source)
+    SELECT phone, ${atExpr}, 'legacy' FROM customers
+    WHERE active = ${activeFalse} AND unsubscribed_at IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM unsubscribe_events)
+    ON CONFLICT DO NOTHING
+  `;
   if (db.type === "postgres") {
     const pgSchema = customersSchema
       .replace("INTEGER DEFAULT 1", "BOOLEAN DEFAULT TRUE")
@@ -190,6 +221,10 @@ export async function applySchema(db: DbConnection): Promise<void> {
     for (const sql of alters) await db.conn.query(sql).catch(() => {});
     await db.conn.query(giftsSchemaPg);
     await db.conn.query(phoneVerificationsSchema);
+    await db.conn.query(unsubscribeEventsSchema);
+    await db.conn.query(broadcastsSchema);
+    // unsubscribed_at is a zone-less TIMESTAMP holding UTC; render it as ISO Z.
+    await db.conn.query(backfillUnsubscribes("FALSE", `to_char(unsubscribed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`));
   } else {
     db.conn.exec(customersSchema);
     const alters = [
@@ -207,6 +242,9 @@ export async function applySchema(db: DbConnection): Promise<void> {
     }
     db.conn.exec(giftsSchemaSqlite);
     db.conn.exec(phoneVerificationsSchema);
+    db.conn.exec(unsubscribeEventsSchema);
+    db.conn.exec(broadcastsSchema);
+    db.conn.exec(backfillUnsubscribes("0", "unsubscribed_at"));
   }
 }
 
