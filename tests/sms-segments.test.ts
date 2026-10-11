@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   smsUnits,
-  segmentsForUnits,
-  smsSegments,
+  billedMessagesForUnits,
+  smsBilledMessages,
   estimateUnsubFooterUnits,
 } from "@/lib/sms-segments";
 
@@ -20,35 +20,40 @@ describe("smsUnits", () => {
   });
 });
 
-describe("segmentsForUnits", () => {
+describe("billedMessagesForUnits", () => {
+  // 019 bills one message per 202 characters, not per 67-character GSM part.
   it.each([
     [0, 0],
     [1, 1],
-    [70, 1], // single-segment boundary
-    [71, 2], // crossing 70 jumps straight to 67-per-segment math
-    [134, 2],
-    [135, 3],
-    [201, 3],
-    [202, 4],
-  ])("%i units -> %i segments", (units, expected) => {
-    expect(segmentsForUnits(units)).toBe(expected);
+    [70, 1],
+    [71, 1], // two GSM parts, still one billed message
+    [202, 1],
+    [203, 2],
+    [404, 2],
+    [405, 3],
+  ])("%i units -> %i billed", (units, expected) => {
+    expect(billedMessagesForUnits(units)).toBe(expected);
   });
 });
 
-describe("smsSegments", () => {
-  it("is segmentsForUnits over the text length", () => {
-    expect(smsSegments("א".repeat(70))).toBe(1);
-    expect(smsSegments("א".repeat(71))).toBe(2);
-    expect(smsSegments("")).toBe(0);
+describe("smsBilledMessages", () => {
+  it("is billedMessagesForUnits over the text length", () => {
+    expect(smsBilledMessages("א".repeat(202))).toBe(1);
+    expect(smsBilledMessages("א".repeat(203))).toBe(2);
+    expect(smsBilledMessages("")).toBe(0);
+  });
+
+  it("quotes 3 billed messages for a 334-character broadcast on the live domain, not 7", () => {
+    const footer = estimateUnsubFooterUnits("https://oshioshi-gedera.vercel.app");
+    expect(billedMessagesForUnits(334 + footer)).toBe(3);
   });
 });
 
 describe("estimateUnsubFooterUnits", () => {
-  it("matches the worker's footer template with a sample link", () => {
+  it("matches the worker's footer with the short link", () => {
     const units = estimateUnsubFooterUnits("https://example.vercel.app");
     const expected =
-      "\n\nלהסרה ממועדון הלקוחות לחץ כאן: https://example.vercel.app/unsubscribe/972501234567?token=" +
-      "x".repeat(8);
+      "\n\nלהסרה ממועדון הלקוחות לחץ כאן: https://example.vercel.app/u/0501234567/" + "x".repeat(8);
     expect(units).toBe(expected.length);
   });
 

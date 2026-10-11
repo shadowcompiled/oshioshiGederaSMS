@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAppSecret, generateSecureToken } from "@/lib/security";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { unsubscribeUrl, unsubFooter } from "@/lib/unsubscribe-link";
 import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 import { sendSmsViaGateway } from "@/lib/sms-gateway";
@@ -31,10 +32,8 @@ export async function POST(req: NextRequest) {
   }
 
   const token = generateSecureToken(phone);
-  const clean = phone.replace("+", "");
   const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
-  const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
-  const finalMsg = `${message}\n\nלהסרה ממועדון הלקוחות לחץ כאן: ${unsubLink}`;
+  const finalMsg = message + unsubFooter(unsubscribeUrl(baseUrl, phone, token));
 
   const result = await sendSmsViaGateway(phone, finalMsg);
   if (!result.ok) {

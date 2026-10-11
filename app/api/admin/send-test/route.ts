@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAdminSession, attachSessionCookie } from "@/lib/auth";
 import { verifyImportToken, generateSecureToken } from "@/lib/security";
 import { getPublicAppUrl } from "@/lib/app-url";
+import { unsubscribeUrl, unsubFooter } from "@/lib/unsubscribe-link";
 import { formatPhone, isValidPhone } from "@/lib/validation";
 import { initDb, getDb, runDb } from "@/lib/db";
 
@@ -40,10 +41,8 @@ export async function POST(req: NextRequest) {
   }
 
   const token = generateSecureToken(phone);
-  const clean = phone.replace("+", "");
   const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
-  const unsubLink = `${baseUrl.replace(/\/+$/, "")}/unsubscribe/${clean}?token=${token}`;
-  const finalMsg = `${message}\n\nלהסרה ממועדון הלקוחות לחץ כאן: ${unsubLink}`;
+  const finalMsg = message + unsubFooter(unsubscribeUrl(baseUrl, phone, token));
 
   const payload = {
     textMessage: { text: finalMsg },

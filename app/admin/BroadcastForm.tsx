@@ -1,15 +1,16 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
-import {
-  smsUnits,
-  segmentsForUnits,
-  estimateUnsubFooterUnits,
-} from "@/lib/sms-segments";
+import { useId, useState } from "react";
+import { smsUnits, billedMessagesForUnits } from "@/lib/sms-segments";
 
-type Props = { importToken: string; activeCount: number; newCount: number };
+/**
+ * footerUnits is measured on the server against the live public URL (see
+ * app/admin/page.tsx): the domain is the longest part of the opt-out link, and
+ * the client can't know which one the SMS worker will print.
+ */
+type Props = { importToken: string; activeCount: number; newCount: number; footerUnits: number };
 
-export default function BroadcastForm({ importToken, activeCount, newCount }: Props) {
+export default function BroadcastForm({ importToken, activeCount, newCount, footerUnits }: Props) {
   const ids = useId();
   const messageId = `${ids}-message`;
   const counterId = `${ids}-counter`;
@@ -18,19 +19,18 @@ export default function BroadcastForm({ importToken, activeCount, newCount }: Pr
   const [feedback, setFeedback] = useState<{ ok: boolean; msg: string } | null>(null);
   const [sending, setSending] = useState(false);
 
-  const footerUnits = useMemo(() => estimateUnsubFooterUnits(), []);
   const units = smsUnits(message);
   const totalUnits = units === 0 ? 0 : units + footerUnits;
-  const totalSegments = segmentsForUnits(totalUnits);
+  const billedPerRecipient = billedMessagesForUnits(totalUnits);
   const recipients = audience === "all" ? activeCount : newCount;
-  const level = totalSegments >= 4 ? "high" : totalSegments >= 3 ? "warn" : "ok";
+  const level = billedPerRecipient >= 3 ? "high" : billedPerRecipient >= 2 ? "warn" : "ok";
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const confirmMsg =
       audience === "new_only"
-        ? `לשלוח רק ל-${newCount} לקוחות חדשים (שטרם קיבלו הודעה)?\n~${totalSegments} מקטעי SMS לנמען, ~${newCount * totalSegments} הודעות בסך הכל.`
-        : `לשלוח לכולם (${activeCount} פעילים)?\n~${totalSegments} מקטעי SMS לנמען, ~${activeCount * totalSegments} הודעות בסך הכל.`;
+        ? `לשלוח רק ל-${newCount} לקוחות חדשים (שטרם קיבלו הודעה)?\n${billedPerRecipient} הודעות לחיוב לנמען, ~${newCount * billedPerRecipient} הודעות בסך הכל.`
+        : `לשלוח לכולם (${activeCount} פעילים)?\n${billedPerRecipient} הודעות לחיוב לנמען, ~${activeCount * billedPerRecipient} הודעות בסך הכל.`;
     if (!confirm(confirmMsg)) return;
 
     setFeedback(null);
@@ -114,12 +114,12 @@ export default function BroadcastForm({ importToken, activeCount, newCount }: Pr
             aria-describedby={counterId}
           />
         </div>
-        {/* aria-live: the segment count is the number that decides what a
+        {/* aria-live: the billed count is the number that decides what a
             broadcast costs, and it changes as the message is typed. */}
         <div id={counterId} className="sms-counter" data-level={level} aria-live="polite">
           <span>{units} תווים</span>
           <span>
-            כולל קישור הסרה: ~{totalUnits} תווים · ~{totalSegments} מקטעי SMS לנמען
+            כולל קישור הסרה: ~{totalUnits} תווים · {billedPerRecipient} הודעות לחיוב לנמען
           </span>
         </div>
         {/* A radio group needs a group label, not just two field labels. The

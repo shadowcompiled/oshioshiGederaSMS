@@ -6,6 +6,8 @@ import { createImportToken } from "@/lib/security";
 import { getDb, withDb, queryCustomers, mapRow, initDb, type CustomerRow } from "@/lib/db";
 import { israelToday, toIsraelDateStr } from "@/lib/dates";
 import { computeKpis } from "@/lib/kpis";
+import { getPublicAppUrl } from "@/lib/app-url";
+import { estimateUnsubFooterUnits } from "@/lib/sms-segments";
 import { loadUnsubscribeDays, type UnsubscribeDay } from "@/lib/unsubscribe-report";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
@@ -167,7 +169,12 @@ export default async function AdminPage({
           <h2 id="broadcast-heading" style={{ marginTop: 0 }}>
             <span aria-hidden="true">📢 </span>שליחת הודעה
           </h2>
-          <BroadcastForm importToken={importToken} activeCount={kpis.active} newCount={kpis.neverMessaged} />
+          <BroadcastForm
+            importToken={importToken}
+            activeCount={kpis.active}
+            newCount={kpis.neverMessaged}
+            footerUnits={estimateUnsubFooterUnits(getPublicAppUrl() || undefined)}
+          />
           {msg && (
             <p style={{ color: "#0d47a1", fontWeight: "bold", marginTop: "10px" }} role="status">
               {msg}
