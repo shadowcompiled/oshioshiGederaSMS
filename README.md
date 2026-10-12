@@ -14,7 +14,7 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
      - `SECRET_KEY` – required in production
      - `ADMIN_PASSWORD` – admin dashboard
      - `POSTGRES_URL` or `DATABASE_URL` – for production (Vercel). Omit for local SQLite (`customers.db`).
-     - `ANDROID_SMS_GATEWAY_*` – SMS gateway
+     - `SMS_019_TOKEN` / `SMS_019_USERNAME` / `SMS_019_SOURCE` – 019 SMS
      - `QSTASH_TOKEN` – for queuing broadcast/birthday SMS
      - `CRON_SECRET` – for `/api/cron/birthday_check`
      - `WAITER_USERNAME` / `WAITER_PASSWORD` – optional waiter login for `/waiter` (both required to enable it)
@@ -39,9 +39,10 @@ VIP club registration with SMS broadcast and birthday reminders. Refactored from
    | `WAITER_USERNAME` | No* | Username for the waiter login on `/login` |
    | `WAITER_PASSWORD` | No* | Password for the waiter login |
    | `POSTGRES_URL` or `DATABASE_URL` | Yes | Postgres connection string (e.g. Vercel Postgres). Add `?sslmode=require` if missing. |
-   | `ANDROID_SMS_GATEWAY_LOGIN` | Yes* | SMS gateway login |
-   | `ANDROID_SMS_GATEWAY_PASSWORD` | Yes* | SMS gateway password |
-   | `ANDROID_SMS_GATEWAY_API_URL` | No | Default: `https://api.sms-gate.app/3rdparty/v1` |
+   | `SMS_019_TOKEN` | Yes* | 019 API token |
+   | `SMS_019_USERNAME` | Yes* | 019 account username |
+   | `SMS_019_SOURCE` | Yes* | Sender name, 1-11 English letters/digits/spaces (e.g. `OSHI GEDERA`) |
+   | `SMS_019_API_URL` | No | Default `https://019sms.co.il/api`; `https://019sms.co.il/api/test` validates without sending |
    | `QSTASH_TOKEN` | Yes* | Upstash QStash token for broadcast/birthday SMS queue |
    | `QSTASH_URL` | No | Only for QStash EU region (e.g. `https://eu1-xxxx.upstash.io`). Default: global host. |
    | `UPSTASH_REDIS_REST_URL` | No* | Upstash Redis REST URL for distributed rate limiting. |

@@ -5,10 +5,7 @@ import { getPublicAppUrl } from "@/lib/app-url";
 import { unsubscribeUrl, unsubFooter } from "@/lib/unsubscribe-link";
 import { formatPhone, isValidPhone } from "@/lib/validation";
 import { initDb, getDb, runDb } from "@/lib/db";
-
-const SMS_LOGIN = process.env.ANDROID_SMS_GATEWAY_LOGIN;
-const SMS_PASS = process.env.ANDROID_SMS_GATEWAY_PASSWORD;
-const SMS_URL = (process.env.ANDROID_SMS_GATEWAY_API_URL || "https://api.sms-gate.app/3rdparty/v1").replace(/\/$/, "");
+import { isSmsGatewayConfigured, sendSmsViaGateway } from "@/lib/sms-gateway";
 
 async function redirectAdmin(req: NextRequest, msg: string, sessionOk: boolean) {
   const url = new URL("/admin", req.url);
@@ -36,7 +33,7 @@ export async function POST(req: NextRequest) {
     return redirectAdmin(req, "מספר טלפון לא תקין. נא להזין מספר מלא (למשל 0501234567 או +972501234567).", sessionOk);
   }
 
-  if (!SMS_LOGIN || !SMS_PASS) {
+  if (!isSmsGatewayConfigured()) {
     return redirectAdmin(req, "שגיאה: חסר הגדרת שער SMS.", sessionOk);
   }
 
@@ -44,34 +41,19 @@ export async function POST(req: NextRequest) {
   const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
   const finalMsg = message + unsubFooter(unsubscribeUrl(baseUrl, phone, token));
 
-  const payload = {
-    textMessage: { text: finalMsg },
-    phoneNumbers: [phone],
-    withDeliveryReport: true,
-  };
-
   try {
-    const auth = Buffer.from(`${SMS_LOGIN}:${SMS_PASS}`).toString("base64");
-    const res = await fetch(`${SMS_URL}/messages`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Basic ${auth}`,
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000),
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      console.error("SMS Gateway Error (test)", res.status, text);
-      return redirectAdmin(req, "שליחת הודעת הבדיקה נכשלה: " + (text || res.status), sessionOk);
+    // The same sender, footer and link a broadcast uses, so a test is the real message.
+    const result = await sendSmsViaGateway(phone, finalMsg);
+    if (!result.ok) {
+      console.error("SMS send error (test)", result.status ?? "", result.error);
+      return redirectAdmin(req, "שליחת הודעת הבדיקה נכשלה: " + result.error, sessionOk);
     }
     try {
       await initDb();
       const db = getDb();
       const now = new Date().toISOString();
-      await runDb(db, "UPDATE customers SET received_message_at = $2 WHERE phone = $1", [phone, now]);
+      // Placeholders in textual order: the SQLite shim rewrites $n positionally.
+      await runDb(db, "UPDATE customers SET received_message_at = $1 WHERE phone = $2", [now, phone]);
       if (db.type === "sqlite") db.conn.close();
     } catch (e) {
       console.error("Failed to set received_message_at (test)", phone, e);
