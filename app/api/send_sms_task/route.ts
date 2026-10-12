@@ -6,6 +6,41 @@ import { getClientIp } from "@/lib/get-ip";
 import { checkRateLimit, LIMITS } from "@/lib/ratelimit";
 import { sendSmsViaGateway } from "@/lib/sms-gateway";
 import { initDb, getDb, runDb } from "@/lib/db";
+import { recordSendAttempt, type SendKind, type SendStatus } from "@/lib/broadcast-history";
+
+/**
+ * Log one attempt to message_sends. Swallows its own errors: an audit row that
+ * cannot be written must never turn a delivered SMS into a reported failure,
+ * nor stop a failed one from being retried.
+ */
+async function logAttempt(
+  phone: string,
+  kind: SendKind,
+  broadcastAt: string | null,
+  status: SendStatus,
+  error: string | null
+): Promise<void> {
+  try {
+    await initDb();
+    const db = getDb();
+    try {
+      await recordSendAttempt(db, {
+        phone,
+        broadcastAt,
+        kind,
+        status,
+        error,
+        attemptedAt: new Date().toISOString(),
+      });
+    } finally {
+      if (db.type === "sqlite") db.conn.close();
+    }
+  } catch (e) {
+    console.error("Failed to log send attempt", phone, e);
+  }
+}
+
+const KINDS: readonly SendKind[] = ["broadcast", "welcome", "birthday", "other"];
 
 export async function POST(req: NextRequest) {
   const ip = await getClientIp();
@@ -14,7 +49,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Too many requests" }, { status: 429 });
   }
 
-  let data: { secret?: string; phone?: string; message?: string };
+  let data: {
+    secret?: string;
+    phone?: string;
+    message?: string;
+    kind?: string;
+    broadcast_at?: string | null;
+  };
   try {
     data = await req.json();
   } catch {
@@ -31,6 +72,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "error", error: "Missing parameters" }, { status: 400 });
   }
 
+  const rawKind = (data.kind ?? "").trim() as SendKind;
+  const kind: SendKind = KINDS.includes(rawKind) ? rawKind : "other";
+  const broadcastAt = data.broadcast_at ? String(data.broadcast_at) : null;
+
   const token = generateSecureToken(phone);
   const baseUrl = getPublicAppUrl() || req.nextUrl.origin;
   const finalMsg = message + unsubFooter(unsubscribeUrl(baseUrl, phone, token));
@@ -38,8 +83,13 @@ export async function POST(req: NextRequest) {
   const result = await sendSmsViaGateway(phone, finalMsg);
   if (!result.ok) {
     console.error("SMS Gateway Error", result.status ?? "", result.error);
+    await logAttempt(phone, kind, broadcastAt, "failed", result.error ?? `gateway ${result.status ?? ""}`);
+    // 500 on purpose: QStash retries, and a later attempt may succeed. The
+    // failed row above stays, so the history shows the retry, not a rewrite.
     return NextResponse.json({ status: "error", error: result.error }, { status: 500 });
   }
+
+  await logAttempt(phone, kind, broadcastAt, "sent", null);
 
   try {
     await initDb();

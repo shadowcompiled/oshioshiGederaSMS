@@ -86,6 +86,11 @@ export async function POST(req: NextRequest) {
       return respond(req, false, "אין מספרי טלפון תקינים לשליחה.", sessionOk);
     }
 
+    // Fixed before the first task is published, so every queued job carries the
+    // same id as the broadcasts row written at the end. Stamping it afterwards
+    // would leave the worker logging against a broadcast that does not exist.
+    const sentAt = new Date().toISOString();
+
     const CHUNK = 8;
     let count = 0;
     let lastError: string | null = null;
@@ -93,7 +98,15 @@ export async function POST(req: NextRequest) {
       const chunk = phones.slice(i, i + CHUNK);
       const results = await Promise.all(
         chunk.map((phone) =>
-          publishSmsTask({ targetEndpoint, phone, message, secret, token: QSTASH_TOKEN! })
+          publishSmsTask({
+            targetEndpoint,
+            phone,
+            message,
+            secret,
+            token: QSTASH_TOKEN!,
+            kind: "broadcast",
+            broadcastAt: sentAt,
+          })
         )
       );
       for (const r of results) {
@@ -115,7 +128,7 @@ export async function POST(req: NextRequest) {
     // a broadcast that already went out into a reported error.
     try {
       const logDb = getDb();
-      await recordBroadcast(logDb, new Date().toISOString(), onlyNew ? "new_only" : "all", count, message);
+      await recordBroadcast(logDb, sentAt, onlyNew ? "new_only" : "all", count, message);
       if (logDb.type === "sqlite") logDb.conn.close();
     } catch (e) {
       console.error("Failed to log broadcast", e);

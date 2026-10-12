@@ -9,6 +9,7 @@ import { computeKpis } from "@/lib/kpis";
 import { getPublicAppUrl } from "@/lib/app-url";
 import { estimateUnsubFooterUnits } from "@/lib/sms-segments";
 import { loadUnsubscribeDays, type UnsubscribeDay } from "@/lib/unsubscribe-report";
+import { loadBroadcastHistory, type BroadcastSummary } from "@/lib/broadcast-history";
 import BroadcastForm from "./BroadcastForm";
 import UploadForm from "./UploadForm";
 import ResetDbForm from "./ResetDbForm";
@@ -24,6 +25,7 @@ const AdminStats = nextDynamic(() => import("./AdminStats"), {
 });
 
 const UnsubscribeChart = nextDynamic(() => import("./UnsubscribeChart"), { ssr: true });
+const BroadcastHistory = nextDynamic(() => import("./BroadcastHistory"), { ssr: true });
 
 export const dynamic = "force-dynamic";
 
@@ -51,6 +53,7 @@ export default async function AdminPage({
 
   let customers: CustomerRow[] = [];
   let unsubscribeDays: UnsubscribeDay[] = [];
+  let broadcastHistory: BroadcastSummary[] = [];
   try {
     await initDb();
     const db = getDb();
@@ -72,6 +75,14 @@ export default async function AdminPage({
     unsubscribeDays = await withDb((db) => loadUnsubscribeDays(db, israelToday()));
   } catch (e) {
     console.error("Unsubscribe chart DB error:", e);
+  }
+
+  // Likewise independent: message_sends is new, so an older database that has
+  // not run the migration yet should still render the rest of the page.
+  try {
+    broadcastHistory = await withDb((db) => loadBroadcastHistory(db));
+  } catch (e) {
+    console.error("Broadcast history DB error:", e);
   }
 
   const today = israelToday();
@@ -187,6 +198,8 @@ export default async function AdminPage({
         </section>
 
         <AdminStats signupsByDate={signupsByDate} cityCounts={cityCounts} />
+
+        <BroadcastHistory broadcasts={broadcastHistory} />
 
         <UnsubscribeChart days={unsubscribeDays} />
 

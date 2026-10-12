@@ -47,8 +47,21 @@ export async function publishSmsTask(args: {
   secret: string;
   token: string;
   timeoutMs?: number;
+  /** What kind of message this is, carried through so the worker can log it. */
+  kind?: string;
+  /** sent_at of the broadcasts row this belongs to; omitted for welcome/birthday. */
+  broadcastAt?: string | null;
 }): Promise<PublishResult> {
-  const { targetEndpoint, phone, message, secret, token, timeoutMs = 12000 } = args;
+  const {
+    targetEndpoint,
+    phone,
+    message,
+    secret,
+    token,
+    timeoutMs = 12000,
+    kind,
+    broadcastAt,
+  } = args;
   const url = `${getQstashPublishBase()}/v2/publish/${targetEndpoint}`;
   try {
     const res = await fetch(url, {
@@ -57,7 +70,7 @@ export async function publishSmsTask(args: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ phone, message, secret }),
+      body: JSON.stringify({ phone, message, secret, kind, broadcast_at: broadcastAt ?? null }),
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (res.ok) return { ok: true, status: res.status };

@@ -124,6 +124,7 @@ export async function POST(req: NextRequest) {
           secret: getAppSecret(),
           token: qstashToken,
           timeoutMs: 5000,
+          kind: "welcome",
         });
         if (!r.ok) console.error("Failed to queue welcome sms for", phone, r.error);
       }

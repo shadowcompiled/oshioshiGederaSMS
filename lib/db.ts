@@ -195,6 +195,31 @@ export async function applySchema(db: DbConnection): Promise<void> {
       message TEXT NOT NULL
     )
   `;
+  // One row per attempt the SMS worker makes, so a broadcast can be audited
+  // recipient by recipient. customers.received_message_at cannot do this: it is
+  // overwritten by every later message, says nothing about failures, and is
+  // shared with welcome and birthday sends, so it can only ever answer "was
+  // this customer messaged at some point".
+  //
+  // broadcast_at carries the sent_at of the broadcasts row this attempt belongs
+  // to, and is NULL for welcome and birthday messages. QStash retries a failed
+  // task, so one phone may hold several rows for one broadcast — the newest
+  // status is the outcome, which is why nothing here is UNIQUE.
+  // TEXT and INTEGER only, so one DDL string is valid on both engines.
+  const messageSendsSchema = `
+    CREATE TABLE IF NOT EXISTS message_sends (
+      phone TEXT NOT NULL,
+      broadcast_at TEXT,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      error TEXT,
+      attempted_at TEXT NOT NULL
+    )
+  `;
+  const messageSendsIndex = `
+    CREATE INDEX IF NOT EXISTS idx_message_sends_broadcast_at
+      ON message_sends (broadcast_at)
+  `;
   // One-time seed of the opt-outs recorded before the events table existed.
   // Guarded by the table being empty, so it runs only on the first init; the
   // UNIQUE constraint absorbs two cold starts racing through it together.
@@ -223,6 +248,8 @@ export async function applySchema(db: DbConnection): Promise<void> {
     await db.conn.query(phoneVerificationsSchema);
     await db.conn.query(unsubscribeEventsSchema);
     await db.conn.query(broadcastsSchema);
+    await db.conn.query(messageSendsSchema);
+    await db.conn.query(messageSendsIndex);
     // unsubscribed_at is a zone-less TIMESTAMP holding UTC; render it as ISO Z.
     await db.conn.query(backfillUnsubscribes("FALSE", `to_char(unsubscribed_at, 'YYYY-MM-DD"T"HH24:MI:SS"Z"')`));
   } else {
@@ -244,6 +271,8 @@ export async function applySchema(db: DbConnection): Promise<void> {
     db.conn.exec(phoneVerificationsSchema);
     db.conn.exec(unsubscribeEventsSchema);
     db.conn.exec(broadcastsSchema);
+    db.conn.exec(messageSendsSchema);
+    db.conn.exec(messageSendsIndex);
     db.conn.exec(backfillUnsubscribes("0", "unsubscribed_at"));
   }
 }

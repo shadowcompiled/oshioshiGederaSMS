@@ -56,6 +56,7 @@ async function handleCron(req: NextRequest) {
         secret,
         token: QSTASH_TOKEN,
         timeoutMs: 5000,
+        kind: "birthday",
       });
       if (r.ok) birthdayQueued += 1;
       else console.error("Failed to queue birthday sms for", phone, r.error);
@@ -68,6 +69,7 @@ async function handleCron(req: NextRequest) {
         secret,
         token: QSTASH_TOKEN,
         timeoutMs: 5000,
+        kind: "birthday",
       });
       if (r.ok) anniversaryQueued += 1;
       else console.error("Failed to queue anniversary sms for", phone, r.error);
