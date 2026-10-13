@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import LogoutButton from "@/app/LogoutButton";
 import { getSessionRole } from "@/lib/auth";
 import { getDb, initDb } from "@/lib/db";
 import { listActiveCustomersWithGifts } from "@/lib/gifts";
@@ -34,9 +34,7 @@ export default async function WaiterPage() {
           <h1>מסך מלצרים</h1>
         </div>
         <div className="admin-actions">
-          <Link href="/api/logout" className="admin-btn admin-btn-logout">
-            יציאה
-          </Link>
+          <LogoutButton />
         </div>
       </div>
       <p className="waiter-sub">

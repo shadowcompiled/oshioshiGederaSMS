@@ -2716,3 +2716,14 @@ body:has(.sheet)::before {
     border: 1px solid currentColor;
   }
 }
+
+/* The logout control is a POST form (app/LogoutButton.tsx); keep the form out
+   of the flex layout and make the button look like the link it replaced. */
+.logout-form {
+  display: contents;
+}
+button.admin-btn-logout {
+  border: none;
+  font: inherit;
+  cursor: pointer;
+}

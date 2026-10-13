@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import nextDynamic from "next/dynamic";
 import Link from "next/link";
+import LogoutButton from "@/app/LogoutButton";
 import { getAdminSession } from "@/lib/auth";
 import { createImportToken } from "@/lib/security";
 import { getDb, withDb, queryCustomers, mapRow, initDb, type CustomerRow } from "@/lib/db";
@@ -146,9 +147,7 @@ export default async function AdminPage({
               <span aria-hidden="true">📊 </span>ייצוא CSV
               <span className="sr-only"> (נפתח בחלון חדש)</span>
             </Link>
-            <Link href="/api/logout" className="admin-btn admin-btn-logout">
-              יציאה
-            </Link>
+            <LogoutButton />
           </div>
         </div>
 
