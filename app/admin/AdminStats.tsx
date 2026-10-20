@@ -89,8 +89,50 @@ function groupCityCounts(items: CityCount[]): CityCount[] {
   return top;
 }
 
-const CustomBarTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number }[]; label?: string }) => {
+/**
+ * A ceiling for the signups axis when one day dwarfs the rest — typically the
+ * day a customer list was imported. Without it a single 103 squashes every
+ * ordinary 1-13 day into a sliver. The axis is capped a little above the
+ * second-busiest day and the outlier is drawn as a broken bar that still
+ * prints its real number, so it is visible without distorting the scale.
+ * Returns null when nothing stands out enough to be worth breaking the axis.
+ */
+export function signupAxisCap(counts: number[]): number | null {
+  const sorted = [...counts].sort((a, b) => b - a);
+  if (sorted.length < 3) return null;
+  const [max, second] = sorted;
+  if (second <= 0 || max < second * 3) return null;
+  const target = second * 1.4;
+  const step = target <= 10 ? 2 : target <= 50 ? 5 : 10;
+  return Math.ceil(target / step) * step;
+}
+
+type SignupBar = SignupsByDate & { shown: number; clipped: boolean };
+
+/** A bar whose top is cut by a white zigzag when its real value runs past the axis. */
+function SignupBarShape(props: { x?: number; y?: number; width?: number; height?: number; fill?: string; payload?: SignupBar }) {
+  const { x = 0, y = 0, width = 0, height = 0, fill, payload } = props;
+  if (height <= 0) return null;
+  const r = Math.min(6, width / 2);
+  const path = `M${x},${y + height} V${y + r} Q${x},${y} ${x + r},${y} H${x + width - r} Q${x + width},${y} ${x + width},${y + r} V${y + height} Z`;
+  return (
+    <g>
+      <path d={path} fill={fill} />
+      {payload?.clipped && (
+        <path
+          d={`M${x - 2},${y + 14} L${x + width / 3},${y + 8} L${(2 * width) / 3 + x},${y + 16} L${x + width + 2},${y + 10}`}
+          stroke="#fff"
+          strokeWidth={3}
+          fill="none"
+        />
+      )}
+    </g>
+  );
+}
+
+const CustomBarTooltip = ({ active, payload, label }: { active?: boolean; payload?: { value: number; payload?: SignupBar }[]; label?: string }) => {
   if (!active || !payload?.length) return null;
+  const count = payload[0].payload?.count ?? payload[0].value;
   return (
     <div style={{
       background: "#fff",
@@ -101,7 +143,7 @@ const CustomBarTooltip = ({ active, payload, label }: { active?: boolean; payloa
       fontSize: "14px",
     }}>
       <div style={{ fontWeight: 600, marginBottom: "4px" }}>{label}</div>
-      <div style={{ color: "#555" }}>רישומים: {payload[0].value}</div>
+      <div style={{ color: "#555" }}>רישומים: {count}</div>
     </div>
   );
 };
@@ -128,6 +170,13 @@ const CustomPieTooltip = ({ active, payload }: { active?: boolean; payload?: { n
 export default function AdminStats({ signupsByDate, cityCounts }: Props) {
   const pieData = groupCityCounts(cityCounts);
   const total = pieData.reduce((s, x) => s + x.value, 0);
+  const cap = signupAxisCap(signupsByDate.map((d) => d.count));
+  const signupBars: SignupBar[] = signupsByDate.map((d) => ({
+    ...d,
+    shown: cap != null ? Math.min(d.count, cap) : d.count,
+    clipped: cap != null && d.count > cap,
+  }));
+  const clippedDays = signupBars.filter((d) => d.clipped);
 
   return (
     <section className="stats-section" aria-labelledby="stats-heading" style={{ direction: "rtl", marginBottom: "28px" }}>
@@ -169,7 +218,7 @@ export default function AdminStats({ signupsByDate, cityCounts }: Props) {
             />
             <div className="stats-chart-container" aria-hidden="true">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={signupsByDate} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
+              <BarChart data={signupBars} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -179,18 +228,25 @@ export default function AdminStats({ signupsByDate, cityCounts }: Props) {
                 />
                 <YAxis
                   allowDecimals={false}
+                  domain={cap != null ? [0, cap] : [0, "auto"]}
+                  allowDataOverflow={cap != null}
                   tick={{ fontSize: 12, fill: "#555" }}
                   axisLine={false}
                   tickLine={false}
                 />
                 <Tooltip content={<CustomBarTooltip />} cursor={{ fill: "rgba(183, 28, 28, 0.06)" }} />
                 <Bar
-                  dataKey="count"
+                  dataKey="shown"
                   name="רישומים"
                   fill={BAR_COLOR}
-                  radius={[6, 6, 0, 0]}
                   maxBarSize={56}
+                  shape={<SignupBarShape />}
+                  // recharts draws LabelList only once the grow-in animation
+                  // reports finished; without it the labels — including the
+                  // real 103 on a capped bar — render immediately, always.
+                  isAnimationActive={false}
                 >
+                  {/* The real count, so a capped bar still says 103. */}
                   <LabelList
                     dataKey="count"
                     position="top"
@@ -200,6 +256,11 @@ export default function AdminStats({ signupsByDate, cityCounts }: Props) {
               </BarChart>
             </ResponsiveContainer>
             </div>
+            {clippedDays.length > 0 && (
+              <p style={{ color: "#5f5a55", fontSize: "0.8125rem", margin: "8px 0 0" }}>
+                ⫽ העמודה של {clippedDays.map((d) => `${d.date} (${d.count})`).join(", ")} קוצרה כדי ששאר הימים יהיו קריאים.
+              </p>
+            )}
             </>
           ) : (
             <p style={{ color: "#5f5a55", fontSize: "0.875rem", margin: 0 }}>אין עדיין נתוני רישום.</p>
