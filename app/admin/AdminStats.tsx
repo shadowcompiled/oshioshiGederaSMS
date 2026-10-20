@@ -90,9 +90,9 @@ function groupCityCounts(items: CityCount[]): CityCount[] {
 }
 
 /**
- * A ceiling for the signups axis when one day dwarfs the rest — typically the
- * day a customer list was imported. Without it a single 103 squashes every
- * ordinary 1-13 day into a sliver. The axis is capped a little above the
+ * A ceiling for the signups axis when one day dwarfs the rest — such as the
+ * in-restaurant signup event that brought in 103 real members in a day.
+ * Without it that day squashes every ordinary 1-13 day into a sliver. The axis is capped a little above the
  * second-busiest day and the outlier is drawn as a broken bar that still
  * prints its real number, so it is visible without distorting the scale.
  * Returns null when nothing stands out enough to be worth breaking the axis.

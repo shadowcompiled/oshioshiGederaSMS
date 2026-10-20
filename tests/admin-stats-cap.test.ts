@@ -3,7 +3,7 @@ import { signupAxisCap } from "@/app/admin/AdminStats";
 
 describe("signupAxisCap", () => {
   it("caps the axis a little above the second-busiest day when one day dwarfs the rest", () => {
-    // The case from the admin page: ordinary days of 1-13 and one import day of 103.
+    // The case from the admin page: ordinary days of 1-13 and one signup-event day of 103.
     const cap = signupAxisCap([1, 2, 10, 13, 103, 4]);
     expect(cap).toBe(20); // 13 * 1.4 = 18.2 -> next step of 5
     expect(cap!).toBeLessThan(103);
